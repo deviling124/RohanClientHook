@@ -5,6 +5,7 @@
 #include "../src/AhkWindow.h"
 #include "../src/CustomEvents/EventNotice.h"
 #include "../src/EventShop/EventShopWindow.h"
+#include "../src/DropBuff/DropBuffHud.h"
 #include "detours.h"
 #include <array>
 #include <cstdio>
@@ -269,6 +270,68 @@ void GlobalChatLocalEcho() {
     Receive(".trade buy",local,0,101,"OtherPlayer");
     Check(displays==5,"global chat echo suppression uses the current character");
 }
+void DropBuffProtocolAndCountdown() {
+    using namespace DropBuffWire;
+    State state;
+    Check(Parse("DBF1 50 1790 0",state) && state.percent==50 && state.remainingSeconds==1790 && !state.paused,"parses a running buff");
+    Check(Parse("DBF1 0 0 0",state) && state.percent==0,"parses no buff");
+    Check(Parse("DBF1 100 86400 1",state) && state.paused,"parses a paused buff");
+    for(const char* bad:{"DBF1","DBF1 50 1790","DBF1 50 1790 0 0","DBF1 -1 5 0","DBF1 50 5 2","DBF1 1001 5 0",
+                         "DBF1 50 86401 0","DBF1 5x 5 0","DBF1  50 5 0","DBF2 50 5 0","dbf1 50 5 0",""})
+        Check(!Parse(bad,state),"rejects malformed reply");
+    State round{75,901,true};State again;
+    Check(Parse(Encode(round),again) && again==round,"encode and parse round trip");
+
+    DropBuffHud hud;using Clock=DropBuffHud::Clock;const auto t0=Clock::now();
+    Check(!hud.Receive("DBF1 50 x 0",t0) && !hud.Active(t0),"malformed reply ignored");
+    Check(hud.Receive("DBF1 50 100 0",t0) && hud.Active(t0),"reply starts the countdown");
+    Check(hud.Current(t0+std::chrono::seconds(30)).remainingSeconds==70,"running buff counts down");
+    Check(!hud.Active(t0+std::chrono::seconds(100)),"countdown ends at zero");
+    hud.Receive("DBF1 50 100 1",t0);
+    Check(hud.Current(t0+std::chrono::seconds(60)).remainingSeconds==100 && hud.Current(t0).paused,"paused buff does not count down");
+    hud.Receive("DBF1 0 0 0",t0);
+    Check(!hud.Active(t0),"no-buff reply clears it");
+    hud.Reset(t0);
+    Check(hud.PollDue(t0) && !hud.PollDue(t0+std::chrono::seconds(10)) && hud.PollDue(t0+DropBuffHud::IdlePoll),"idle poll interval");
+    hud.Receive("DBF1 50 100 0",t0);
+    Check(!hud.PollDue(t0+std::chrono::seconds(4)) && hud.PollDue(t0+std::chrono::seconds(5)),"active poll interval is shorter");
+}
+void DropBuffTransport() {
+    Setup(); AhkWindow window; DropBuffHud hud;
+    {
+        auto early=Say("hello");
+        Check(Bridge::Test::Submit(context,0x1f03,early.data(),5,6)==73 && !Bridge::SessionMatches(),
+            "chat before the countdown exists teaches nothing");
+        sent.clear();
+    }
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(sent.empty(),"no poll before the Say header is known");
+    auto chat=Say("hello");const auto original=chat;
+    Check(Bridge::Test::Submit(context,0x1f03,chat.data(),5,6)==73 && chat==original,"ordinary chat still sent unchanged");
+    Check(sent.size()==1 && sent[0].text=="hello","ordinary chat reaches the native send once");
+    sent.clear();
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(sent.size()==1 && sent[0].text==".dbf1" && sent[0].opcode==0x1f03,"first frame polls with the learned header");
+    Check(std::memcmp(sent[0].body.data(),original.data(),14)==0,"poll uses the player's own Say header");
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(sent.size()==1,"no second poll inside the interval");
+    const auto source=reinterpret_cast<void*>(0x402f14);
+    Receive("DBF1 50 1790 0",source,3,100,"[DropBuff]");
+    Receive("DBF1 50 1790 0",reinterpret_cast<void*>(0x402f15),3,0,"[DropBuff]");
+    Receive("DBF1 50 1790 0",source,0,0,"[DropBuff]");
+    Receive("DBF1 50 1790 0",source,3,0,"[EventShop]");
+    Check(Bridge::Test::Incoming()==0 && displays==4,"spoofed sender, caller, mode and name are not intercepted");
+    Receive("DBF1 50 1790 0",source,3,0,"[DropBuff]");
+    Check(Bridge::Test::Incoming()==1 && displays==4,"authentic reply is hidden and queued");
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(hud.Current().percent==50 && hud.Current().remainingSeconds>=1789,"frame delivers the reply to the countdown");
+    Receive("DBF1 nonsense",source,3,0,"[DropBuff]");
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(hud.Current().percent==50,"malformed reply leaves the countdown alone");
+    Bridge::Test::Session(otherContext,100);
+    Bridge::Frame(window,nullptr,nullptr,&hud);
+    Check(!hud.Active(),"a connection change clears the countdown");
+}
 void EventShopTransport() {
     Setup(); AhkWindow window; EventShopWindow shop;
     auto command = Say(".EPShop  ");
@@ -341,6 +404,7 @@ int main() {
     CommandAndFraming();PassThroughAndBounds();IngressGuardsAndAbi();ThreadSessionAndQueue();AccountTransitionWhileHidden();LocalOpenEcho();
     GlobalChatLocalEcho();
     EventShopTransport();
+    DropBuffProtocolAndCountdown();DropBuffTransport();
     std::printf("AHK native chat bridge: %u checks passed. No game code executed.\n",checks);
     return 0;
 }

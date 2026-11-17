@@ -22,6 +22,7 @@
 <ClCompile Include="src\AhkWindow.cpp" />
 <ClCompile Include="src\EventShop\EventShopWindow.cpp" />
 <ClCompile Include="src\EventShop\ItemIcons.cpp" />
+<ClCompile Include="src\DropBuff\DropBuffHud.cpp" />
 <ClCompile Include="src\preview.cpp" /></ItemGroup>
 <ItemGroup><ClInclude Include="src\AhkWindow.h" /><ClInclude Include="shared\AhkProtocol.h" /></ItemGroup>
 <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

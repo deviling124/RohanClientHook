@@ -2,6 +2,7 @@
 #include "AhkWindow.h"
 #include "CustomEvents/EventNotice.h"
 #include "EventShop/EventShopWindow.h"
+#include "DropBuff/DropBuffHud.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
 #include <intrin.h>
@@ -31,6 +32,8 @@ std::array<unsigned char,21> sayPrefix{};
 std::atomic<void*> connection{nullptr};
 std::atomic<unsigned> character{0};
 std::atomic<bool> prefixReady{false};
+// Set only when the runtime owns a drop-buff countdown: then any Say also teaches the Say header.
+std::atomic<bool> learnFromChat{false};
 HWND gameHwnd=nullptr;
 #ifdef AHK_BRIDGE_TESTING
 void* testConnection=nullptr;
@@ -93,23 +96,32 @@ bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
 }
+// Remembers the connection and the 21-byte Say header so queued commands can be sent as Say later.
+void Learn(void* self,unsigned id,const unsigned char* prefix) {
+    std::lock_guard<std::mutex> guard(queueMutex);
+    const bool changed=!prefixReady.load() || connection.load()!=self || character.load()!=id;
+    if(changed) {
+        outgoing.clear();incoming.clear();sessionResetRequested=true;
+    }
+    connection=self;character=id;prefixReady=true;
+    std::memcpy(sayPrefix.data(),prefix,21);
+    gameThread=GetCurrentThreadId();
+}
 int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b) {
     if(opcode==0x1f03) {
         char text[161]{};short length=0;unsigned char prefix[21]{};
-        if(ReadSay(body,text,length,prefix) && (IsOpenCommand(text,length) || IsShopCommand(text,length))) {
+        if(ReadSay(body,text,length,prefix)) {
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length);
             void* current=nullptr;unsigned id=0;
-            if(Current(current,id) && current==self) {
-                std::lock_guard<std::mutex> guard(queueMutex);
-                const bool changed=!prefixReady.load() || connection.load()!=self || character.load()!=id;
-                if(changed) {
-                    outgoing.clear();incoming.clear();sessionResetRequested=true;
+            if(Current(current,id) && current==self && (command || learnFromChat.load())) {
+                // With the countdown active any ordinary Say teaches the header, so the background
+                // poll needs no typed command. Without it only the explicit commands do.
+                Learn(self,id,prefix);
+                if(command) {
+                    if(IsShopCommand(text,length)) shopRequested=true;
+                    else openRequested=true;
+                    return 0; // Local command: do not broadcast .ahk into chat.
                 }
-                connection=self;character=id;prefixReady=true;
-                std::memcpy(sayPrefix.data(),prefix,21);
-                gameThread=GetCurrentThreadId();
-                if(IsShopCommand(text,length)) shopRequested=true;
-                else openRequested=true;
-                return 0; // Local command: do not broadcast .ahk into chat.
             }
         }
     }
@@ -142,7 +154,9 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         char message[256]{},source[32]{};std::size_t n=0,s=0;
         if(ReadString(text,message,sizeof message,n) && ReadString(name,source,sizeof source,s) &&
            ((s==12 && std::memcmp(source,"[AdvancedHK]",12)==0 && n>=7 && std::memcmp(message,"AHKUI1 ",7)==0) ||
-            (s==11 && std::memcmp(source,"[EventShop]",11)==0 && n>=5 && std::memcmp(message,"EPS1 ",5)==0))) {
+            (s==11 && std::memcmp(source,"[EventShop]",11)==0 && n>=5 && std::memcmp(message,"EPS1 ",5)==0) ||
+            (s==DropBuffWire::Source.size() && std::memcmp(source,DropBuffWire::Source.data(),s)==0 &&
+             n>=DropBuffWire::Prefix.size() && std::memcmp(message,DropBuffWire::Prefix.data(),DropBuffWire::Prefix.size())==0))) {
             std::lock_guard<std::mutex> guard(queueMutex);
             try {if(incoming.size()<32) incoming.emplace_back(message,n);} catch(...) {}
             return;
@@ -171,7 +185,8 @@ void Pump() {
     for(const auto& command:commands) {
         if(!SessionMatches()) break;
         if(command.empty() || command.size()>160 ||
-           (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0)) continue;
+           (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 &&
+            command!=DropBuffWire::PollCommand)) continue;
         std::array<unsigned char,181> body{};
         std::memcpy(body.data(),prefix.data(),21);
         const short length=static_cast<short>(command.size());
@@ -184,24 +199,27 @@ void Pump() {
         sendOriginal(connection.load(),0x1f03,body.data(),a,b);
     }
 }
-void Disconnect(AhkWindow& window,EventShopWindow* shop) {
+void Disconnect(AhkWindow& window,EventShopWindow* shop,DropBuffHud* hud) {
     if(shop) shop->ResetSession();
+    if(hud) hud->Reset();
     shopRequested=false;
     window.ResetSession();prefixReady=false;openRequested=false;sessionResetRequested=false;
     connection=nullptr;character=0;gameThread=0;
     std::lock_guard<std::mutex> guard(queueMutex);
     incoming.clear();outgoing.clear();
 }
-void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop) {
+void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
     gameHwnd=hwnd;
-    if(sessionResetRequested.exchange(false)) {window.ResetSession();if(shop) shop->ResetSession();}
+    if(hud) learnFromChat=true;
+    if(sessionResetRequested.exchange(false)) {window.ResetSession();if(shop) shop->ResetSession();if(hud) hud->Reset();}
     if(openRequested.exchange(false)) {if(shop) shop->Close();window.Open();}
     if(shopRequested.exchange(false) && shop) shop->Open();
-    if((window.Visible() || (shop && shop->Visible()) || prefixReady.load()) && !SessionMatches()) Disconnect(window,shop);
+    if((window.Visible() || (shop && shop->Visible()) || prefixReady.load()) && !SessionMatches()) Disconnect(window,shop,hud);
     std::deque<std::string> replies;
     {std::lock_guard<std::mutex> guard(queueMutex);replies.swap(incoming);}
     for(const auto& reply:replies) {
         if(reply.compare(0,5,"EPS1 ")==0) {if(shop) shop->Receive(reply);}
+        else if(reply.compare(0,DropBuffWire::Prefix.size(),DropBuffWire::Prefix)==0) {if(hud) hud->Receive(reply);}
         else window.Receive(reply);
     }
     auto commands=window.TakeCommands();
@@ -212,6 +230,7 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop) {
         if(!notice.empty() && SessionMatches()) EventNotice::ShowLocal(("[Event Shop] " + notice).c_str());
         if(shop->Visible() && window.Visible()) window.Close();
     }
+    if(hud && SessionMatches() && hud->PollDue()) commands.emplace_back(DropBuffWire::PollCommand);
     if(!commands.empty() && SessionMatches()) {
         std::lock_guard<std::mutex> guard(queueMutex);
         if(outgoing.size()+commands.size()<=32)
@@ -225,7 +244,7 @@ namespace Test {
 void Configure(void* current,unsigned id,unsigned a,unsigned b,NativeSend sender,NativeIngress receiver) {
     std::lock_guard<std::mutex> guard(queueMutex);
     incoming.clear();outgoing.clear();openRequested=false;shopRequested=false;sessionResetRequested=false;gameThread=0;
-    prefixReady=false;connection=nullptr;character=0;sayPrefix.fill(0);gameHwnd=nullptr;
+    prefixReady=false;learnFromChat=false;connection=nullptr;character=0;sayPrefix.fill(0);gameHwnd=nullptr;
     testConnection=current;testCharacter=id;testMetadataA=a;testMetadataB=b;
     sendOriginal=sender;ingressOriginal=receiver;
 }

@@ -12,6 +12,7 @@
 #include "backends/imgui_impl_win32.h"
 #include "AhkWindow.h"
 #include "EventShop/EventShopWindow.h"
+#include "DropBuff/DropBuffHud.h"
 #include "EventShop/ItemIcons.h"
 #include "Bridge.h"
 #include "Dx9Frame.h"
@@ -53,6 +54,7 @@ int cursorBumps=0;
 bool cursorOwned=false;
 AhkWindow window;
 EventShopWindow eventShop;
+DropBuffHud dropBuffHud;
 IDirect3DDevice9* primaryDevice=nullptr;
 HWND primaryWindow=nullptr;
 WNDPROC previousWndProc=nullptr;
@@ -247,7 +249,7 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
     if(guiReady && self==primaryDevice && GetCurrentThreadId()==renderThread &&
        (!overrideWindow || overrideWindow==primaryWindow)) {
         struct IconFrame { ~IconFrame() { EventShopIcons::ReleaseFrame(); } } iconFrame;
-        Bridge::Frame(window,primaryWindow,&eventShop);
+        Bridge::Frame(window,primaryWindow,&eventShop,&dropBuffHud);
         // Native chat timeout notices run on the owning window thread.
         static ULONGLONG lastKioskPump=0;
         const auto kioskNow=GetTickCount64();
@@ -256,13 +258,14 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
         }
         if(!inputAvailable || !graphicsHealthy) {window.Close();eventShop.Close();}
         SetVisible(window.Visible() || eventShop.Visible());ReleaseClosedInput();
-        if((window.Visible() || eventShop.Visible()) && SUCCEEDED(self->TestCooperativeLevel())) {
+        // The countdown label is drawn without opening any window or taking input.
+        if((window.Visible() || eventShop.Visible() || (dropBuffHud.Active() && graphicsHealthy)) && SUCCEEDED(self->TestCooperativeLevel())) {
             Dx9Frame frame(self);
             if(frame.Begin()) {
                 readingUiInput=true;
                 ImGui_ImplDX9_NewFrame();ImGui_ImplWin32_NewFrame();
                 ImGui::GetIO().MouseDrawCursor=false;
-                ImGui::NewFrame();window.Draw();eventShop.Draw(self);ImGui::EndFrame();ImGui::Render();
+                ImGui::NewFrame();window.Draw();eventShop.Draw(self);dropBuffHud.Draw();ImGui::EndFrame();ImGui::Render();
                 ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
                 EventShopIcons::ReleaseFrame();
                 readingUiInput=false;
@@ -271,7 +274,7 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
                     graphicsHealthy=false;window.Close();eventShop.Close();SetVisible(false);
                     Log("Graphics state restoration failed; overlay disabled until device reset.");
                 }
-                Bridge::Frame(window,primaryWindow,&eventShop);
+                Bridge::Frame(window,primaryWindow,&eventShop,&dropBuffHud);
             } else {
                 window.Close();eventShop.Close();SetVisible(false);
                 if(!graphicsWarning) {

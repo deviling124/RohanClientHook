@@ -22,6 +22,7 @@
 <ClCompile Include="src\AhkWindow.cpp" />
 <ClCompile Include="src\EventShop\EventShopWindow.cpp" />
 <ClCompile Include="src\EventShop\ItemIcons.cpp" />
+<ClCompile Include="src\DropBuff\DropBuffHud.cpp" />
 <ClCompile Include="vendor\detours\src\detours.cpp" />
 <ClCompile Include="vendor\detours\src\modules.cpp" />
 <ClCompile Include="vendor\detours\src\disasm.cpp" />
@@ -40,7 +41,7 @@
 <ClCompile Include="src\Dx9Frame.cpp" />
 <ClCompile Include="src\Splash.cpp" />
 <ClCompile Include="src\Runtime.cpp" /></ItemGroup>
-<ItemGroup><ClInclude Include="src\AhkWindow.h" /><ClInclude Include="shared\AhkProtocol.h" /><ClInclude Include="src\Bridge.h" /><ClInclude Include="src\Dx9Frame.h" /><ClInclude Include="src\Splash.h" /><ClInclude Include="src\CustomEvents\EventNotice.h" /><ClInclude Include="shared\EventNoticeProtocol.h" /></ItemGroup>
+<ItemGroup><ClInclude Include="src\AhkWindow.h" /><ClInclude Include="src\DropBuff\DropBuffHud.h" /><ClInclude Include="shared\DropBuffProtocol.h" /><ClInclude Include="shared\AhkProtocol.h" /><ClInclude Include="src\Bridge.h" /><ClInclude Include="src\Dx9Frame.h" /><ClInclude Include="src\Splash.h" /><ClInclude Include="src\CustomEvents\EventNotice.h" /><ClInclude Include="shared\EventNoticeProtocol.h" /></ItemGroup>
 <ItemGroup><ResourceCompile Include="src\Splash.rc" /></ItemGroup>
 <ItemGroup><ClInclude Include="src\Auth\AutotradeLogin.h" /></ItemGroup>
 <ItemGroup><ClInclude Include="src\KioskSearch.h" /><ClInclude Include="shared\KioskSearchProtocol.h" /></ItemGroup>
