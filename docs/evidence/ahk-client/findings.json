@@ -1,0 +1,73 @@
+{
+  "binary": "rohanclient_unpacked.exe",
+  "sha256": "622e106891adc7c80bac7e526ffa2eafe5f76c37bf6e5847b1f2406ebfb814c0",
+  "evidence": "static focused Ghidra export plus instruction checks; no execution",
+  "send": {
+    "address": "0x00407f50",
+    "convention": "__thiscall",
+    "stack_dwords": 4,
+    "ret_bytes": 16,
+    "args": [
+      "opcode",
+      "body",
+      "metadata1",
+      "metadata2"
+    ],
+    "global_this": "0x00d3ab54",
+    "metadata_globals": [
+      "0x00d7b8e8",
+      "0x00d7b8ec"
+    ],
+    "fingerprint16": "83ec0c568bf18a866d08000084c07409"
+  },
+  "say": {
+    "opcode": "0x1f03",
+    "encoder": "0x00401300",
+    "header_bytes": 21,
+    "text_length_offset": 14,
+    "link_length_offset": 16,
+    "text_offset": 21,
+    "max_text_bytes": 160
+  },
+  "receive": {
+    "address": "0x005ea790",
+    "convention": "__thiscall",
+    "stack_dwords": 13,
+    "ret_bytes": 52,
+    "shout_call": "0x00402f0f",
+    "shout_return": "0x00402f14",
+    "shout_mode": 3,
+    "args": [
+      "mode",
+      "textString",
+      "nameString",
+      "senderId",
+      "metadata1",
+      "metadata2",
+      "metadataWord",
+      "zero",
+      "flag",
+      "zero",
+      "linkData",
+      "linkObject",
+      "linkCount"
+    ],
+    "fingerprint16": "6aff68ebd3be0064a100000000506489"
+  },
+  "string": {
+    "buffer_or_pointer_offset": 4,
+    "size_offset": 20,
+    "capacity_offset": 24,
+    "inline_capacity_threshold": 16
+  },
+  "local_player": {
+    "global": "0x00d3ffc0",
+    "character_id_offset": 8
+  },
+  "limitations": [
+    "Static only",
+    "Names of metadata values unknown",
+    "Zero sender ID live behavior untested",
+    "Thread ownership needs runtime validation"
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "binary": "/C:/Users/anden/OneDrive/Documents/RohanClient_Hook/00_reference/rohanclient_unpacked.exe",
+  "sha256": "622e106891adc7c80bac7e526ffa2eafe5f76c37bf6e5847b1f2406ebfb814c0",
+  "analysis": "Fresh no-auto-analysis import; explicit disassembly/function creation at supplied entries; static only.",
+  "functions": [
+    {
+      "kind": "explicit-instruction-range",
+      "address": "008b5350",
+      "end": "008b53b2",
+      "instructions": [
+        "008b5350  55   PUSH EBP",
+        "008b5351  8B EC   MOV EBP,ESP",
+        "008b5353  83 E4 F8   AND ESP,0xfffffff8",
+        "008b5356  6A FF   PUSH -0x1",
+        "008b5358  68 0D B0 C0 00   PUSH 0xc0b00d",
+        "008b535d  64 A1 00 00 00 00   MOV EAX,FS:[0x0]",
+        "008b5363  50   PUSH EAX",
+        "008b5364  64 89 25 00 00 00 00   MOV dword ptr FS:[0x0],ESP",
+        "008b536b  81 EC B0 03 00 00   SUB ESP,0x3b0",
+        "008b5371  A1 90 5E D3 00   MOV EAX,[0x00d35e90]",
+        "008b5376  89 84 24 A8 03 00 00   MOV dword ptr [ESP + 0x3a8],EAX",
+        "008b537d  A1 7C B0 D3 00   MOV EAX,[0x00d3b07c]",
+        "008b5382  8B 40 04   MOV EAX,dword ptr [EAX + 0x4]",
+        "008b5385  89 44 24 4C   MOV dword ptr [ESP + 0x4c],EAX",
+        "008b5389  8B 40 04   MOV EAX,dword ptr [EAX + 0x4]",
+        "008b538c  53   PUSH EBX",
+        "008b538d  89 4C 24 0C   MOV dword ptr [ESP + 0xc],ECX",
+        "008b5391  8B 08   MOV ECX,dword ptr [EAX]",
+        "008b5393  3B C8   CMP ECX,EAX",
+        "008b5395  56   PUSH ESI",
+        "008b5396  57   PUSH EDI",
+        "008b5397  89 4C 24 1C   MOV dword ptr [ESP + 0x1c],ECX",
+        "008b539b  0F 84 C4 10 00 00   JZ 0x008b6465",
+        "008b53a1  33 DB   XOR EBX,EBX",
+        "008b53a3  8B 41 10   MOV EAX,dword ptr [ECX + 0x10]",
+        "008b53a6  39 58 54   CMP dword ptr [EAX + 0x54],EBX",
+        "008b53a9  89 44 24 18   MOV dword ptr [ESP + 0x18],EAX",
+        "008b53ad  0F 84 98 10 00 00   JZ 0x008b644b"
+      ]
+    },
+    {
+      "kind": "explicit-instruction-range",
+      "address": "008b5814",
+      "end": "008b583c",
+      "instructions": [
+        "008b5814  8B 54 24 18   MOV EDX,dword ptr [ESP + 0x18]",
+        "008b5818  8B 42 04   MOV EAX,dword ptr [EDX + 0x4]",
+        "008b581b  8D 4C 24 10   LEA ECX,[ESP + 0x10]",
+        "008b581f  51   PUSH ECX",
+        "008b5820  8B 4C 24 18   MOV ECX,dword ptr [ESP + 0x18]",
+        "008b5824  83 C1 14   ADD ECX,0x14",
+        "008b5827  89 44 24 14   MOV dword ptr [ESP + 0x14],EAX",
+        "008b582b  E8 E0 BA F8 FF   CALL 0x00841310",
+        "008b5830  8B 54 24 34   MOV EDX,dword ptr [ESP + 0x34]",
+        "008b5834  89 50 04   MOV dword ptr [EAX + 0x4],EDX",
+        "008b5837  8B 4C 24 30   MOV ECX,dword ptr [ESP + 0x30]",
+        "008b583b  89 08   MOV dword ptr [EAX],ECX"
+      ]
+    },
+    {
+      "kind": "explicit-instruction-range",
+      "address": "00a4827d",
+      "end": "00a482b6",
+      "instructions": [
+        "00a4827d  8B 54 24 14   MOV EDX,dword ptr [ESP + 0x14]",
+        "00a48281  8B 4C 24 10   MOV ECX,dword ptr [ESP + 0x10]",
+        "00a48285  6A FF   PUSH -0x1",
+        "00a48287  56   PUSH ESI",
+        "00a48288  89 94 24 94 01 00 00   MOV dword ptr [ESP + 0x194],EDX",
+        "00a4828f  56   PUSH ESI",
+        "00a48290  89 8C 24 94 01 00 00   MOV dword ptr [ESP + 0x194],ECX",
+        "00a48297  8B 0F   MOV ECX,dword ptr [EDI]",
+        "00a48299  8D 94 24 8C 01 00 00   LEA EDX,[ESP + 0x18c]",
+        "00a482a0  89 B4 24 8C 01 00 00   MOV dword ptr [ESP + 0x18c],ESI",
+        "00a482a7  89 B4 24 90 01 00 00   MOV dword ptr [ESP + 0x190],ESI",
+        "00a482ae  8B 40 70   MOV EAX,dword ptr [EAX + 0x70]",
+        "00a482b1  52   PUSH EDX",
+        "00a482b2  50   PUSH EAX",
+        "00a482b3  57   PUSH EDI",
+        "00a482b4  FF 51 24   CALL dword ptr [ECX + 0x24]"
+      ]
+    },
+    {
+      "kind": "explicit-instruction-range",
+      "address": "005fbb88",
+      "end": "005fbb96",
+      "instructions": [
+        "005fbb88  8D 4E 78   LEA ECX,[ESI + 0x78]",
+        "005fbb8b  51   PUSH ECX",
+        "005fbb8c  8B 0D C4 D3 D3 00   MOV ECX,dword ptr [0x00d3d3c4]",
+        "005fbb92  E8 F9 C7 40 00   CALL 0x00a08390"
+      ]
+    }
+  ]
+}

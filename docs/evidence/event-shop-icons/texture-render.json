@@ -1,0 +1,91 @@
+{
+  "binary": "/C:/Users/anden/OneDrive/Documents/RohanClient_Hook/00_reference/rohanclient_unpacked.exe",
+  "sha256": "622e106891adc7c80bac7e526ffa2eafe5f76c37bf6e5847b1f2406ebfb814c0",
+  "analysis": "Fresh no-auto-analysis import; explicit disassembly/function creation at supplied entries; static only.",
+  "functions": [
+    {
+      "address": "00a446d0",
+      "name": "FUN_00a446d0",
+      "decompiled": true,
+      "error": "",
+      "pseudocode": "\r\nundefined4 __thiscall FUN_00a446d0(undefined4 param_1,byte param_2)\r\n\r\n{\r\n  func_0x00a43b50();\r\n  if ((param_2 \u0026 1) !\u003d 0) {\r\n    func_0x00b8d5ed(param_1);\r\n  }\r\n  return param_1;\r\n}\r\n\r\n",
+      "instructions": [
+        "00a446d0  56   PUSH ESI",
+        "00a446d1  8B F1   MOV ESI,ECX",
+        "00a446d3  E8 78 F4 FF FF   CALL 0x00a43b50",
+        "00a446d8  F6 44 24 08 01   TEST byte ptr [ESP + 0x8],0x1",
+        "00a446dd  74 09   JZ 0x00a446e8",
+        "00a446df  56   PUSH ESI",
+        "00a446e0  E8 08 8F 14 00   CALL 0x00b8d5ed",
+        "00a446e5  83 C4 04   ADD ESP,0x4",
+        "00a446e8  8B C6   MOV EAX,ESI",
+        "00a446ea  5E   POP ESI",
+        "00a446eb  C2 04 00   RET 0x4"
+      ],
+      "incoming": []
+    },
+    {
+      "address": "00a446f0",
+      "name": "FUN_00a446f0",
+      "decompiled": true,
+      "error": "",
+      "pseudocode": "\r\nundefined4 __thiscall FUN_00a446f0(undefined4 param_1,byte param_2)\r\n\r\n{\r\n  func_0x00a43b90();\r\n  if ((param_2 \u0026 1) !\u003d 0) {\r\n    func_0x00b8d5ed(param_1);\r\n  }\r\n  return param_1;\r\n}\r\n\r\n",
+      "instructions": [
+        "00a446f0  56   PUSH ESI",
+        "00a446f1  8B F1   MOV ESI,ECX",
+        "00a446f3  E8 98 F4 FF FF   CALL 0x00a43b90",
+        "00a446f8  F6 44 24 08 01   TEST byte ptr [ESP + 0x8],0x1",
+        "00a446fd  74 09   JZ 0x00a44708",
+        "00a446ff  56   PUSH ESI",
+        "00a44700  E8 E8 8E 14 00   CALL 0x00b8d5ed",
+        "00a44705  83 C4 04   ADD ESP,0x4",
+        "00a44708  8B C6   MOV EAX,ESI",
+        "00a4470a  5E   POP ESI",
+        "00a4470b  C2 04 00   RET 0x4"
+      ],
+      "incoming": []
+    },
+    {
+      "address": "00a44710",
+      "name": "FUN_00a44710",
+      "decompiled": true,
+      "error": "",
+      "pseudocode": "\r\nundefined4 __thiscall FUN_00a44710(undefined4 param_1,byte param_2)\r\n\r\n{\r\n  func_0x00a43bd0();\r\n  if ((param_2 \u0026 1) !\u003d 0) {\r\n    func_0x00b8d5ed(param_1);\r\n  }\r\n  return param_1;\r\n}\r\n\r\n",
+      "instructions": [
+        "00a44710  56   PUSH ESI",
+        "00a44711  8B F1   MOV ESI,ECX",
+        "00a44713  E8 B8 F4 FF FF   CALL 0x00a43bd0",
+        "00a44718  F6 44 24 08 01   TEST byte ptr [ESP + 0x8],0x1",
+        "00a4471d  74 09   JZ 0x00a44728",
+        "00a4471f  56   PUSH ESI",
+        "00a44720  E8 C8 8E 14 00   CALL 0x00b8d5ed",
+        "00a44725  83 C4 04   ADD ESP,0x4",
+        "00a44728  8B C6   MOV EAX,ESI",
+        "00a4472a  5E   POP ESI",
+        "00a4472b  C2 04 00   RET 0x4"
+      ],
+      "incoming": []
+    },
+    {
+      "address": "00a44730",
+      "name": "FUN_00a44730",
+      "decompiled": true,
+      "error": "",
+      "pseudocode": "\r\nundefined4 __thiscall FUN_00a44730(undefined4 param_1,byte param_2)\r\n\r\n{\r\n  func_0x00a43c10();\r\n  if ((param_2 \u0026 1) !\u003d 0) {\r\n    func_0x00b8d5ed(param_1);\r\n  }\r\n  return param_1;\r\n}\r\n\r\n",
+      "instructions": [
+        "00a44730  56   PUSH ESI",
+        "00a44731  8B F1   MOV ESI,ECX",
+        "00a44733  E8 D8 F4 FF FF   CALL 0x00a43c10",
+        "00a44738  F6 44 24 08 01   TEST byte ptr [ESP + 0x8],0x1",
+        "00a4473d  74 09   JZ 0x00a44748",
+        "00a4473f  56   PUSH ESI",
+        "00a44740  E8 A8 8E 14 00   CALL 0x00b8d5ed",
+        "00a44745  83 C4 04   ADD ESP,0x4",
+        "00a44748  8B C6   MOV EAX,ESI",
+        "00a4474a  5E   POP ESI",
+        "00a4474b  C2 04 00   RET 0x4"
+      ],
+      "incoming": []
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+LIBRARY novaclient
+EXPORTS
+    NovaClient_Initialize=_NovaClient_Initialize@4
+    NovaClient_Status=_NovaClient_Status@0
