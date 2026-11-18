@@ -113,7 +113,7 @@ Destination Resolve(Channel channel) {
     }
 }
 
-DecodeResult ReadChannel(void* reader, unsigned char (&buffer)[HeaderSize + MaxText], Message& message) {
+DecodeResult ReadChannel(void* reader, unsigned char (&buffer)[HeaderSize + MaxText + MaxLink], Message& message) {
     bool marked = false;
     __try {
         if (!reader) return DecodeResult::Unmarked;
@@ -134,7 +134,7 @@ DecodeResult ReadChannel(void* reader, unsigned char (&buffer)[HeaderSize + MaxT
 }
 
 int __cdecl DecodeShout(void* reader) {
-    unsigned char bytes[HeaderSize + MaxText];
+    unsigned char bytes[HeaderSize + MaxText + MaxLink];
     Message message;
     const auto result = ReadChannel(reader, bytes, message);
     if (result == DecodeResult::Unmarked) return originalShout(reader);
