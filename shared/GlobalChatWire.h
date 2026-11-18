@@ -6,18 +6,12 @@
 
 // Mirrored in both hook projects. A marked Shout keeps the server-owned
 // character ID, full native name field and plain chat text.
-//
-// Version 1: text only. Version 2: the same, plus the sender's item-link blob after
-// the text (link length at +38, the three link-entry type bytes at +40..42 -- the
-// same slots the native Say decoder uses). Messages without a link stay version 1.
 namespace GlobalChatWire {
 enum class Channel : std::uint16_t { None, World, Trade };
 inline constexpr unsigned Opcode = 0x1F04;
 inline constexpr std::size_t HeaderSize = 43, MaxText = 160, MaxName = 20;
-inline constexpr std::size_t MinLink = 66, MaxLink = 200;   // one item link is 5 + 0x3D bytes
 inline constexpr std::uint32_t Magic = 0x48434752; // RGCH on the wire
-inline constexpr std::uint32_t Version = 1, LinkVersion = 2;
-inline constexpr unsigned char ItemLinkType = 1;
+inline constexpr std::uint32_t Version = 1;
 
 constexpr bool Known(Channel channel) { return channel == Channel::World || channel == Channel::Trade; }
 inline const char* Label(Channel channel) { return channel == Channel::World ? "World" : "Trade"; }
@@ -48,53 +42,21 @@ inline Channel Parse(std::string_view line, std::string_view& message) {
     message = line;
     return name == "world" ? Channel::World : Channel::Trade;
 }
-
-// A chat link: the blob after the text plus the three link-entry type bytes. Only item
-// links (type 1) are carried; anything else is refused so no exotic link kind reaches
-// other players' clients.
-struct LinkData {
-    std::string_view bytes;
-    unsigned char types[3]{};
-};
-inline bool ValidLink(const LinkData& link) {
-    if (link.bytes.size() < MinLink || link.bytes.size() > MaxLink) return false;
-    bool item = false;
-    for (unsigned char type : link.types) {
-        if (type != 0 && type != ItemLinkType) return false;
-        item |= type == ItemLinkType;
-    }
-    return item;
-}
-
-inline std::size_t EncodeLinked(Channel channel, std::uint32_t sender, std::string_view name,
-                                std::string_view message, const LinkData& link,
-                                unsigned char* out, std::size_t capacity) {
-    const bool linked = !link.bytes.empty();
+inline std::size_t Encode(Channel channel, std::uint32_t sender, std::string_view name,
+                          std::string_view message, unsigned char* out, std::size_t capacity) {
     if (!Known(channel) || !sender || name.size() > MaxName || message.size() > MaxText ||
-        !Plain(name) || !Plain(message) || !out || (linked && !ValidLink(link)) ||
-        capacity < HeaderSize + message.size() + link.bytes.size()) return 0;
+        !Plain(name) || !Plain(message) || !out || capacity < HeaderSize + message.size()) return 0;
     const auto kind = static_cast<std::uint16_t>(channel);
     const auto length = static_cast<std::uint16_t>(message.size());
-    const auto linkLength = static_cast<std::uint16_t>(link.bytes.size());
-    const std::uint32_t version = linked ? LinkVersion : Version;
     std::memset(out, 0, HeaderSize);
     std::memcpy(out, &sender, sizeof sender);
     std::memcpy(out + 4, name.data(), name.size());
     std::memcpy(out + 26, &Magic, sizeof Magic);
-    std::memcpy(out + 30, &version, sizeof version);
+    std::memcpy(out + 30, &Version, sizeof Version);
     std::memcpy(out + 34, &kind, sizeof kind);
     std::memcpy(out + 36, &length, sizeof length);
-    if (linked) {
-        std::memcpy(out + 38, &linkLength, sizeof linkLength);
-        std::memcpy(out + 40, link.types, sizeof link.types);
-    }
     std::memcpy(out + HeaderSize, message.data(), message.size());
-    if (linked) std::memcpy(out + HeaderSize + message.size(), link.bytes.data(), link.bytes.size());
-    return HeaderSize + message.size() + link.bytes.size();
-}
-inline std::size_t Encode(Channel channel, std::uint32_t sender, std::string_view name,
-                          std::string_view message, unsigned char* out, std::size_t capacity) {
-    return EncodeLinked(channel, sender, name, message, {}, out, capacity);
+    return HeaderSize + message.size();
 }
 
 struct Message {
@@ -102,7 +64,6 @@ struct Message {
     std::uint32_t sender = 0;
     std::string_view name;
     std::string_view text;
-    LinkData link;       // empty bytes when the message carries no link
 };
 enum class DecodeResult { Unmarked, Invalid, Message };
 inline DecodeResult Decode(const unsigned char* body, std::size_t bytes, Message& message) {
@@ -113,35 +74,22 @@ inline DecodeResult Decode(const unsigned char* body, std::size_t bytes, Message
     if (marker != Magic) return DecodeResult::Unmarked;
     if (bytes < HeaderSize) return DecodeResult::Invalid;
     std::uint32_t version = 0, sender = 0;
-    std::uint16_t kind = 0, length = 0, linkLength = 0;
+    std::uint16_t kind = 0, length = 0;
     std::memcpy(&sender, body, sizeof sender);
     std::memcpy(&version, body + 30, sizeof version);
     std::memcpy(&kind, body + 34, sizeof kind);
     std::memcpy(&length, body + 36, sizeof length);
-    std::memcpy(&linkLength, body + 38, sizeof linkLength);
     const auto channel = static_cast<Channel>(kind);
-    if (!sender || (version != Version && version != LinkVersion) || !Known(channel) ||
-        length > MaxText || body[25]) return DecodeResult::Invalid;
-    LinkData link;
-    if (version == Version) {
-        if (linkLength || body[40] || body[41] || body[42]) return DecodeResult::Invalid;
-    } else {
-        link.bytes = std::string_view(reinterpret_cast<const char*>(body + HeaderSize) + length, linkLength);
-        std::memcpy(link.types, body + 40, sizeof link.types);
-        if (!ValidLink(link)) return DecodeResult::Invalid;
-    }
-    if (bytes != HeaderSize + length + linkLength) return DecodeResult::Invalid;
+    if (!sender || version != Version || !Known(channel) || length > MaxText ||
+        bytes != HeaderSize + length || body[25] || body[38] || body[39] ||
+        body[40] || body[41] || body[42]) return DecodeResult::Invalid;
     const auto* name = reinterpret_cast<const char*>(body + 4);
     const auto* end = static_cast<const char*>(std::memchr(name, 0, MaxName + 1));
     if (!end) return DecodeResult::Invalid;
     const std::string_view nameView(name, static_cast<std::size_t>(end - name));
     const std::string_view text(reinterpret_cast<const char*>(body + HeaderSize), length);
     if (!Plain(nameView) || !Plain(text)) return DecodeResult::Invalid;
-    message.channel = channel;
-    message.sender = sender;
-    message.name = nameView;
-    message.text = text;
-    message.link = link;
+    message = {channel, sender, nameView, text};
     return DecodeResult::Message;
 }
 }

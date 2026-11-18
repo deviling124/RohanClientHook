@@ -17,11 +17,6 @@ int checks = 0, broadcasts = 0, replies = 0, nativeCalls = 0, draws = 0, inserts
 bool muted = false, statusAvailable = true, allAvailable = true;
 unsigned lastColor = 0, lastStyle = 0, lastNativeColor = 0, lastOutline = 0;
 std::string line, logChannel;
-bool linkTypesAvailable = false;
-unsigned char linkTypes[3]{};
-int published = 0;
-std::size_t publishedLink = 0;
-std::string publishedText;
 struct Reader { unsigned unused; const unsigned char* body; unsigned unused2, size, cursor; };
 struct Object {
     std::array<unsigned, 0x1A10 / sizeof(unsigned)> fields{};
@@ -91,23 +86,6 @@ bool Submit(std::string_view text, unsigned identity = Sender, bool item = false
     std::memcpy(body + 15, text.data(), text.size());
     return WorldChat::TryHandleCommand(source, body, 15 + n + body[10]);
 }
-// A message carrying `blobSize` link bytes; the three type bytes the translator would have saved.
-bool SubmitLinked(std::string_view text, std::size_t blobSize, unsigned char t0, unsigned char t1 = 0,
-                  unsigned char t2 = 0, bool typesSaved = true, unsigned identity = Sender) {
-    unsigned char body[400]{};
-    const auto n = static_cast<short>(text.size());
-    const auto links = static_cast<short>(blobSize);
-    std::memcpy(body + 4, &identity, 4);
-    std::memcpy(body + 8, &n, 2);
-    std::memcpy(body + 10, &links, 2);
-    std::memcpy(body + 15, text.data(), text.size());
-    for (std::size_t i = 0; i < blobSize; ++i) body[15 + n + i] = static_cast<unsigned char>(0x40 + i % 7);
-    linkTypesAvailable = typesSaved;
-    linkTypes[0] = t0; linkTypes[1] = t1; linkTypes[2] = t2;
-    const bool handled = WorldChat::TryHandleCommand(connection.Data(), body, 15 + n + blobSize);
-    linkTypesAvailable = false;
-    return handled;
-}
 }
 
 namespace ChatCommon {
@@ -117,18 +95,10 @@ LPCSTR GetPlayerName(void* ptr) {
 }
 void LogChatConsole(const char* channel, WORD, void*, const unsigned char*, short) { logChannel = channel; }
 void LogChatConsoleNamed(const char* channel, WORD, const char*, const unsigned char*, short) { logChannel = channel; }
-bool TakeLinkTypes(int, unsigned char (&types)[3]) {
-    if (!linkTypesAvailable) return false;
-    std::memcpy(types, linkTypes, 3);
-    return true;
-}
 }
 namespace DiscordBridge {
-void Publish(GlobalChatWire::Channel, std::string_view, std::string_view text, std::string_view link) {
-    ++published;
-    publishedLink = link.size();
-    publishedText.assign(text);
-}
+// The server's WorldChat.cpp queues accepted messages for Discord; nothing to check here.
+void Publish(GlobalChatWire::Channel, std::string_view, std::string_view) {}
 }
 namespace GmNotice {
 void SendSystemBroadcast(void* self, unsigned short opcode, const void* body, int size) {
@@ -218,37 +188,12 @@ int main() {
     unsigned char wire[HeaderSize + MaxText]{};
     const auto length = Encode(Channel::Trade, Sender, Name, "hello", wire, sizeof wire);
     Check(length && Receive(wire, static_cast<unsigned>(length)) == 0, "valid marked message is consumed");
-    wire[30] = 3;
+    wire[30] = 2;
     Check(Receive(wire, static_cast<unsigned>(length)) == 0, "unknown marked version is consumed");
     Check(Receive(wire, 30) == 0, "truncated marked header is consumed");
     wire[26] = 0;
     Check(Receive(wire, static_cast<unsigned>(length)) == 17 && nativeCalls == 1, "ordinary Shout stays on the native decoder");
     Check(draws == 5, "five font calls forwarded once each");
-
-    // ---- Item links in World/Trade (stage 1: carried and shown as text) ----
-    allAvailable = true;
-    const int sentBefore = broadcasts, insertsBefore = inserts, publishedBefore = published;
-    Check(SubmitLinked(".trade WTS [Sprint Scroll(Superior)]", 66, 1) && broadcasts == sentBefore + 1 &&
-          inserts == insertsBefore + 1, "a valid item link is broadcast and shown");
-    Check(line == "[Trade] TwentyCharacterName!: WTS [Sprint Scroll(Superior)]", "link text is displayed unchanged");
-    Check(published == publishedBefore + 1 && publishedLink == 66 && publishedText == "WTS [Sprint Scroll(Superior)]",
-          "Discord receives the text and the 66-byte blob");
-    Check(SubmitLinked(".world [A][B][C]", 188, 1, 1, 1) && broadcasts == sentBefore + 2, "three item links fit");
-    const int repliesBefore = replies;
-    Check(SubmitLinked(".world [x]", 66, 1, 0, 0, false) && replies == repliesBefore + 1 &&
-          broadcasts == sentBefore + 2, "link with no saved type bytes is refused");
-    Check(SubmitLinked(".world [x]", 66, 2) && replies == repliesBefore + 2 && broadcasts == sentBefore + 2,
-          "non-item link type is refused");
-    Check(SubmitLinked(".world [x]", 66, 0) && replies == repliesBefore + 3 && broadcasts == sentBefore + 2,
-          "link with no item entry is refused");
-    Check(SubmitLinked(".world [x]", 40, 1) && replies == repliesBefore + 4 && broadcasts == sentBefore + 2,
-          "too-short link blob is refused");
-    Check(SubmitLinked(".world [x]", 201, 1) && replies == repliesBefore + 5 && broadcasts == sentBefore + 2,
-          "oversized link blob is refused");
-    Check(SubmitLinked(".world [x]", 66, 1, 0, 0, true, 0x1234) && broadcasts == sentBefore + 2 &&
-          replies == repliesBefore + 5, "forged sender with a link is consumed");
-    Check(published == publishedBefore + 2, "refused link messages are not sent to Discord");
-    Check(Submit(".trade plain") && published == publishedBefore + 3 && publishedLink == 0, "plain messages publish no blob");
 
     std::ifstream reference("00_reference/rohanclient_unpacked.exe", std::ios::binary);
     std::vector<unsigned char> image(std::istreambuf_iterator<char>(reference), {});
