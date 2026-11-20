@@ -1,7 +1,9 @@
 #pragma once
 #include "../../shared/CollectionProtocol.h"
+#include "LocalCatalog.h"
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -65,6 +67,10 @@ public:
     // Queue a request. Requests are sent one at a time, at least 600 ms apart (the server throttles per character).
     void RequestList(unsigned category, unsigned page);
     void RequestInfo(int setId);
+    // Local mode: reads the catalog from data\cb_*.bin. From then on lists and texts are built here, and the server is only asked for
+    // what the character owns (`mine`) and for the actions. Without it (files missing or wrong) everything stays server driven.
+    bool LoadLocalCatalog(const std::string& dir, std::string& error);
+    bool Local() const { return local_.Loaded(); }
     // Registers every item of the set that is not registered yet, one slot after the other; slots whose item is not in the
     // inventory are skipped by the server (error 8), so one call registers everything the player holds.
     void RequestRegisterAll(int setId);
@@ -106,12 +112,15 @@ public:
     unsigned Version() const { return version_; }   // grows whenever page data, effects or the status text change
 
 private:
-    enum class Kind { List, Info, Register, Equip, Activate, Upgrade, Claim, DList, Disassemble };
+    enum class Kind { List, Info, Register, Equip, Activate, Upgrade, Claim, DList, Disassemble, State };
     struct Req { Kind kind = Kind::List; unsigned category = 1, page = 0; int set = 0; unsigned slot = 0; bool batch = false; };
     struct InFlight { bool active = false; std::uint32_t nonce = 0; Req req; std::uint64_t sent = 0, lastPoll = 0;
                       unsigned expectedSets = 0, gotSets = 0, gotItems = 0; };
     struct Batch { unsigned attempts = 0, registered = 0, missing = 0, other = 0; bool open = false; };
 
+    void RebuildPage();
+    void SetMask(int set, unsigned mask);
+    void QueueState();
     void Finish(std::uint64_t now);
     void Fail(const std::string& text, std::uint64_t now);
     void Touch() { ++version_; }
@@ -133,6 +142,11 @@ private:
     std::uint64_t lastFinish_ = 0, now_ = 0;
     std::uint32_t nonce_ = 0;
     unsigned version_ = 0;
+    LocalCatalog local_;
+    std::map<int, unsigned> masks_, claimed_, mineBuilding_, claimedBuilding_;
+    bool stateLoaded_ = false;
+    unsigned wantCategory_ = 1, wantPage_ = 0, mineLines_ = 0, mineGot_ = 0;
+    std::uint64_t stateAt_ = 0;
 };
 
 // The window code uses one shared instance (declared here, defined in CollectionBookClient.cpp).

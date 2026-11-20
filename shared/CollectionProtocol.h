@@ -17,10 +17,12 @@
 //                                                        .cbk1 claim <nonce> <setId>        (claim the next ready reward of an activated set)
 //                                                        .cbk1 dlist <nonce> <page>         (the decomposable items in the bag, 5 per page)
 //                                                        .cbk1 dis <nonce> <itemType> <1|2>   (take apart 1 or 30 of that item)
+//                                                        .cbk1 mine <nonce>                 (everything this character owns; the client keeps the catalog texts itself, data\cb_*.bin)
 //                                                        .cbk1 poll <nonce>
 // Server -> client (0x1F04 with sender "[CollectionBook]"):
 //   CBK1 wait <nonce>
 //   CBK1 state <nonce> <category> <page> <pages> <countInCategory>   (a page is 5 sets; then `set` + `items` per set)
+//   CBK1 mine <nonce> <rows> <lines>                        (answer of `mine`; then `lines` x `CBK1 own <nonce> <index> <id> <mask> <claimedBits>` with up to 4 id/mask/claimed triples)
 //   CBK1 set <nonce> <index> <setId> <category> <ownedMask> <hex name>
 //   CBK1 items <nonce> <index> <item0> .. <item5>
 //   CBK1 fx <nonce> <index> <line> <lines> <hex text>      (index 0 = effect text, 1 = upgrade text, 2 = rewards text; `lines` = lines of that text)
@@ -83,7 +85,7 @@ inline bool Unhex(std::string_view text, std::string& output, std::size_t maxByt
     return true;
 }
 
-enum class Action { List, Info, Register, Poll, Equip, Activate, Upgrade, Claim, DList, Disassemble };
+enum class Action { List, Info, Register, Poll, Equip, Activate, Upgrade, Claim, DList, Disassemble, Mine };
 struct Request {
     Action action = Action::List;
     std::uint32_t nonce = 0;
@@ -101,6 +103,7 @@ inline bool ParseRequest(std::string_view text, Request& output) {
         Number(w[4], r.page) && r.page < MaxPages) r.action = Action::List;
     else if (w[1] == "info" && w.size() == 4 && Number(w[3], r.set) && r.set > 0) r.action = Action::Info;
     else if (w[1] == "poll" && w.size() == 3) r.action = Action::Poll;
+    else if (w[1] == "mine" && w.size() == 3) r.action = Action::Mine;
     else if (w[1] == "reg" && w.size() == 5 && Number(w[3], r.set) && r.set > 0 && Number(w[4], r.slot) &&
              r.slot < SlotsPerSet) r.action = Action::Register;
     else if (w[1] == "eq" && w.size() == 5 && Number(w[3], r.set) && r.set > 0 && Number(w[4], r.slot) && r.slot < 2)
@@ -177,6 +180,16 @@ inline std::string ItemsRow(std::uint32_t nonce, unsigned index, const Set& s) {
 }
 inline std::string FxRow(std::uint32_t nonce, unsigned index, unsigned line, unsigned lines, const std::string& text) {
     return "CBK1 fx " + N(nonce) + " " + N(index) + " " + N(line) + " " + N(lines) + " " + (text.empty() ? std::string("-") : Hex(text));
+}
+inline std::string MineState(std::uint32_t nonce, unsigned rows, unsigned lines) {
+    return "CBK1 mine " + N(nonce) + " " + N(rows) + " " + N(lines);
+}
+struct OwnEntry { int id = 0; unsigned mask = 0, claimed = 0; };
+inline constexpr unsigned OwnPerLine = 4;
+inline std::string OwnRow(std::uint32_t nonce, unsigned index, const OwnEntry* entries, unsigned count) {
+    std::string out = "CBK1 own " + N(nonce) + " " + N(index);
+    for (unsigned i = 0; i < count; ++i) out += " " + std::to_string(entries[i].id) + " " + N(entries[i].mask) + " " + N(entries[i].claimed);
+    return out;
 }
 inline std::string EquipResult(std::uint32_t nonce, int result, int set, unsigned active, unsigned owned) {
     return "CBK1 eq " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + N(active) + " " + N(owned);

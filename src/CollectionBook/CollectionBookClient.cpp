@@ -64,10 +64,64 @@ void Client::Reset() {
     batch_ = {};
     status_.clear();
     lastFinish_ = 0;
+    masks_.clear(); claimed_.clear(); mineBuilding_.clear(); claimedBuilding_.clear();
+    stateLoaded_ = false;
+    mineLines_ = mineGot_ = 0;
     Touch();
 }
 
+bool Client::LoadLocalCatalog(const std::string& dir, std::string& error) { return local_.Load(dir, error); }
+
+// Local mode: the page is composed here from the catalog files and the character's owned masks.
+void Client::RebuildPage() {
+    unsigned page = wantPage_, pages = 1, count = 0;
+    const auto entries = local_.PageOf(wantCategory_, page, pages, count);
+    Page built;
+    built.category = wantCategory_; built.page = page; built.pages = pages; built.count = count; built.loaded = true;
+    for (const auto& e : entries) {
+        SetView s;
+        s.id = e.id; s.category = e.category; s.name = e.name;
+        for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) s.items[i] = e.items[i];
+        const auto m = masks_.find(e.id);
+        s.owned = m == masks_.end() ? 0 : m->second;
+        const auto c = claimed_.find(e.id);
+        const unsigned claimed = c == claimed_.end() ? 0 : c->second;
+        unsigned unlocked = 0;
+        for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) unlocked += (s.owned >> i) & 1u;
+        s.effect = local_.Effect(e.id); s.effectLoaded = true;
+        s.upgrade = local_.Upgrade(e.id, Level(s), unlocked); s.upgradeLoaded = true;
+        s.rewards = local_.Rewards(e.id, s.owned, claimed); s.rewardsLoaded = true;
+        built.sets.push_back(std::move(s));
+    }
+    page_ = std::move(built);
+    Touch();
+}
+
+// A changed mask of one entry (an action's answer); equipping a set unequips the others, like the server does.
+void Client::SetMask(int set, unsigned mask) {
+    if (!local_.Loaded()) return;
+    if (mask & CollectionWire::ActiveBit)
+        for (auto& entry : masks_) if (entry.first != set) entry.second &= ~CollectionWire::ActiveBit;
+    masks_[set] = mask;
+    RebuildPage();
+}
+
+void Client::QueueState() {
+    if (std::any_of(queue_.begin(), queue_.end(), [](const Req& r) { return r.kind == Kind::State; }) ||
+        (inFlight_.active && inFlight_.req.kind == Kind::State)) return;
+    Req r;
+    r.kind = Kind::State;
+    queue_.push_front(r);
+}
+
 void Client::RequestList(unsigned category, unsigned page) {
+    if (local_.Loaded()) {
+        // Pages come from the local files; the server is asked only when the owned data is missing or older than half a minute.
+        wantCategory_ = category; wantPage_ = page;
+        if (!stateLoaded_ || now_ - stateAt_ > 30000) { QueueState(); SetStatus("Loading..."); }
+        if (stateLoaded_) RebuildPage();
+        return;
+    }
     // A newer list replaces an older queued one: the player only cares about the page they asked for last.
     queue_.erase(std::remove_if(queue_.begin(), queue_.end(), [](const Req& r) { return r.kind == Kind::List; }), queue_.end());
     Req r;
@@ -79,6 +133,7 @@ void Client::RequestList(unsigned category, unsigned page) {
 }
 
 void Client::RequestInfo(int setId) {
+    if (local_.Loaded()) return;   // the texts of every set on the page are composed locally
     for (const auto& r : queue_) if (r.kind == Kind::Info && r.set == setId) return;
     Req r;
     r.kind = Kind::Info;
@@ -221,6 +276,7 @@ void Client::Tick(std::uint64_t now) {
     inFlight_.sent = inFlight_.lastPoll = now;
     const std::string n = std::to_string(inFlight_.nonce);
     switch (r.kind) {
+    case Kind::State: commands_.push_back(".cbk1 mine " + n); break;
     case Kind::List: commands_.push_back(".cbk1 list " + n + " " + std::to_string(r.category) + " " + std::to_string(r.page)); break;
     case Kind::Info: commands_.push_back(".cbk1 info " + n + " " + std::to_string(r.set)); break;
     case Kind::DList: commands_.push_back(".cbk1 dlist " + n + " " + std::to_string(r.page)); break;
@@ -259,6 +315,35 @@ void Client::Receive(const std::string& line) {
             } else {
                 Fail(ErrorText(code), now_);
             }
+        }
+        return;
+    }
+    if (kind == "mine" && inFlight_.req.kind == Kind::State && w.size() == 5) {
+        unsigned rows = 0, lines = 0;
+        if (!CollectionWire::Number(w[3], rows) || !CollectionWire::Number(w[4], lines) || lines > 4096 || rows > 4 * lines) return;
+        mineBuilding_.clear(); claimedBuilding_.clear();
+        mineLines_ = lines; mineGot_ = 0;
+        if (!lines) { masks_.clear(); claimed_.clear(); stateLoaded_ = true; stateAt_ = now_; SetStatus(""); RebuildPage(); Finish(now_); }
+        return;
+    }
+    if (kind == "own" && inFlight_.req.kind == Kind::State && w.size() >= 7 && (w.size() - 4) % 3 == 0 && mineLines_) {
+        unsigned index = 0;
+        if (!CollectionWire::Number(w[3], index) || index != mineGot_) return;
+        for (std::size_t at = 4; at + 2 < w.size(); at += 3) {
+            int id = 0;
+            unsigned mask = 0, claimed = 0;
+            if (!CollectionWire::Number(w[at], id) || !CollectionWire::Number(w[at + 1], mask) || !CollectionWire::Number(w[at + 2], claimed) ||
+                mask >= CollectionWire::MaskLimit || claimed > 255) return;
+            mineBuilding_[id] = mask;
+            claimedBuilding_[id] = claimed;
+        }
+        if (++mineGot_ >= mineLines_) {
+            masks_ = std::move(mineBuilding_); claimed_ = std::move(claimedBuilding_);
+            mineBuilding_.clear(); claimedBuilding_.clear();
+            stateLoaded_ = true; stateAt_ = now_; mineLines_ = 0;
+            SetStatus("");
+            RebuildPage();
+            Finish(now_);
         }
         return;
     }
@@ -390,7 +475,8 @@ void Client::Receive(const std::string& line) {
         if (!CollectionWire::Number(w[3], result) || !CollectionWire::Number(w[4], set) || !CollectionWire::Number(w[5], tier) ||
             !CollectionWire::Number(w[6], bits) || set != inFlight_.req.set || tier > 7 || bits > 255) return;
         if (result == 0) {
-            if (SetView* s = FindSet(set)) s->rewardsLoaded = false;
+            if (local_.Loaded()) { claimed_[set] = bits; RebuildPage(); }
+            else if (SetView* s = FindSet(set)) s->rewardsLoaded = false;
             Touch();
         }
         switch (result) {
@@ -412,7 +498,8 @@ void Client::Receive(const std::string& line) {
         unsigned mask = 0;
         if (!CollectionWire::Number(w[3], result) || !CollectionWire::Number(w[4], set) || !CollectionWire::Number(w[5], mask) ||
             set != inFlight_.req.set || mask >= CollectionWire::MaskLimit) return;
-        if (SetView* s = FindSet(set)) {
+        if (result <= 1 && local_.Loaded()) SetMask(set, mask);
+        else if (SetView* s = FindSet(set)) {
             if (result <= 1) { s->owned = mask; s->upgradeLoaded = false; Touch(); }
         }
         const unsigned level = (mask >> CollectionWire::LevelShift) & CollectionWire::MaxLevel;
@@ -438,7 +525,9 @@ void Client::Receive(const std::string& line) {
         const bool activating = inFlight_.req.kind == Kind::Activate;
         const bool wantEquip = inFlight_.req.slot == 1;
         if (result == 0 || result == 3) {
-            if (SetView* s = FindSet(set)) {
+            if (local_.Loaded()) {
+                SetMask(set, activating ? (mask | CollectionWire::OwnBit) : mask);
+            } else if (SetView* s = FindSet(set)) {
                 s->owned = mask;
                 if (activating) s->owned |= CollectionWire::OwnBit;
                 Touch();
@@ -458,7 +547,10 @@ void Client::Receive(const std::string& line) {
         unsigned slot = 0, mask = 0;
         if (!CollectionWire::Number(w[3], result) || !CollectionWire::Number(w[4], set) || !CollectionWire::Number(w[5], slot) ||
             !CollectionWire::Number(w[6], mask) || set != inFlight_.req.set || slot != inFlight_.req.slot) return;
-        if (SetView* s = FindSet(set)) { s->owned = (mask & (CollectionWire::ActiveBit - 1)) | (s->owned & ~(CollectionWire::ActiveBit - 1)); Touch(); }
+        if (local_.Loaded()) {
+            const unsigned old = masks_.count(set) ? masks_[set] : 0;
+            SetMask(set, (mask & (CollectionWire::ActiveBit - 1)) | (old & ~(CollectionWire::ActiveBit - 1)));
+        } else if (SetView* s = FindSet(set)) { s->owned = (mask & (CollectionWire::ActiveBit - 1)) | (s->owned & ~(CollectionWire::ActiveBit - 1)); Touch(); }
         if (batch_.open) {
             if (result == 0) ++batch_.registered;
             else if (result == 3) ++batch_.registered;  // already there counts as done

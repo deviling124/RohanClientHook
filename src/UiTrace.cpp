@@ -1086,6 +1086,18 @@ LONG Attach() {
             ProtoLog(text);
         }
     }
+    if (prototypeEnabled) {
+        // The catalog (names, costs, texts) is read from the client data files; without them the server keeps sending everything.
+        const char* narrow = ".\\data";
+        std::string error;
+        const bool localOk = CollectionBookClient::Shared().LoadLocalCatalog(narrow, error);
+        if (diagnostics) {
+            char text[400];
+            std::snprintf(text, sizeof text, "collection files %s: %s", localOk ? "loaded from" : "not used", localOk ? narrow : error.c_str());
+            CollectionBookClient::SetLogger([](const char* t) { ProtoLog(t); });
+            ProtoLog(text);
+        }
+    }
     InitializeCriticalSection(&lock);
     mainThreadId = GetCurrentThreadId();
     LONG result = NO_ERROR;
