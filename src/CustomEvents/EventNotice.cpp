@@ -1,5 +1,6 @@
 #include "EventNotice.h"
 #include "../../shared/EventNoticeProtocol.h"
+#include "MonsterName.h"
 #include "detours.h"
 #include <cstring>
 
@@ -50,6 +51,14 @@ EventNoticeWire::Result ReadNotice(void* reader, char (&text)[EventNoticeWire::M
         const unsigned size = *reinterpret_cast<const unsigned*>(object + 0x0C);
         const unsigned cursor = *reinterpret_cast<const unsigned*>(object + 0x10);
         if (!data || size > 65535 || cursor > size) return Result::Unrelated;
+        std::uint32_t monsterId = 0;
+        std::string_view monsterName;
+        if (DecodeNameOverride(data + cursor, size - cursor, monsterId, monsterName)) {
+            // Disguise Event name override: consumed here, never shown as a notice.
+            MonsterName::Handle(monsterId, monsterName);
+            *reinterpret_cast<unsigned*>(object + 0x10) = size;
+            return Result::Invalid;
+        }
         std::string_view payload;
         const Result result = Decode(data + cursor, size - cursor, payload);
         if (result == Result::Unrelated) return result; // Stock decoder receives its exact original reader.

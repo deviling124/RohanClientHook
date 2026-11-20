@@ -1,4 +1,5 @@
 #include "../src/CustomEvents/EventNotice.cpp"
+#include "../src/CustomEvents/MonsterName.h"
 #include "../../RohanMapServ_Hook/src/CustomEvents/MapTHAdapter.h"
 #include "../../RohanMapServ_Hook/src/CustomEvents/BossTracker.h"
 #include "../../RohanMapServ_Hook/src/CustomEvents/Belzac.h"
@@ -45,6 +46,65 @@ int Receive(std::vector<unsigned char> body, unsigned cursor = 0) {
     Check(body == saved, "client never mutates incoming wire bytes");
     return status;
 }
+std::vector<unsigned char> OverridePacket(std::uint32_t id, const char* name) {
+    std::vector<unsigned char> out(EventNoticeWire::HeaderSize + EventNoticeWire::MaxText);
+    std::size_t written = 0;
+    Check(EventNoticeWire::EncodeNameOverride(id, name, out.data(), out.size(), written), "override packet encodes");
+    out.resize(written);
+    return out;
+}
+void SetString(std::vector<unsigned char>& script, unsigned offset, const char* text, std::vector<char>* heap) {
+    const unsigned length = static_cast<unsigned>(std::strlen(text));
+    *reinterpret_cast<unsigned*>(&script[offset + 0x14]) = length;
+    if (heap) {
+        heap->assign(64, 0); std::memcpy(heap->data(), text, length);
+        *reinterpret_cast<char**>(&script[offset + 4]) = heap->data();
+        *reinterpret_cast<unsigned*>(&script[offset + 0x18]) = 63;
+    } else {
+        std::memcpy(&script[offset + 4], text, length + 1);
+        *reinterpret_cast<unsigned*>(&script[offset + 0x18]) = 15;
+    }
+}
+std::string ReadString(const std::vector<unsigned char>& script, unsigned offset) {
+    const unsigned length = *reinterpret_cast<const unsigned*>(&script[offset + 0x14]);
+    const unsigned capacity = *reinterpret_cast<const unsigned*>(&script[offset + 0x18]);
+    const char* chars = capacity < 16 ? reinterpret_cast<const char*>(&script[offset + 4])
+                                      : *reinterpret_cast<char* const*>(&script[offset + 4]);
+    return std::string(chars, length);
+}
+void TestMonsterNames() {
+    std::vector<unsigned char> inlineScript(0x320), heapScript(0x320);
+    std::vector<char> heapName;
+    SetString(inlineScript, 0x08, "Apir1", nullptr);
+    SetString(inlineScript, 0x24, "Apir Reaver", nullptr);
+    SetString(heapScript, 0x08, "Giant spearspider1", nullptr);
+    SetString(heapScript, 0x24, "Giant Spearspider", &heapName);
+    MonsterName::TestRegister(262212, inlineScript.data());
+    MonsterName::TestRegister(262214, heapScript.data());
+    const int shown = displayed, passed = forwarded;
+    Check(Receive(OverridePacket(262212, "PAIR RARVEE")) == 0, "override packet is consumed, not forwarded");
+    Check(ReadString(inlineScript, 0x24) == "PAIR RARVEE", "display name replaced in place (inline string)");
+    Check(ReadString(inlineScript, 0x08) == "Apir1", "string of a different length is left untouched");
+    Receive(OverridePacket(262214, "GNAIT PSEARDIRESP"));
+    Check(ReadString(heapScript, 0x24) == "GNAIT PSEARDIRESP", "display name replaced in place (heap string)");
+    Receive(OverridePacket(262212, "TOOLONGFORTHISNAME"));
+    Check(ReadString(inlineScript, 0x24) == "PAIR RARVEE", "different length is ignored");
+    Receive(OverridePacket(999999, "ABC"));
+    Check(displayed == shown && forwarded == passed, "unknown monster ids change nothing and show nothing");
+    Receive(OverridePacket(262212, "="));
+    Check(ReadString(inlineScript, 0x24) == "Apir Reaver" && ReadString(inlineScript, 0x08) == "Apir1", "equals sign restores the real name");
+    Receive(OverridePacket(262214, "="));
+    Check(ReadString(heapScript, 0x24) == "Giant Spearspider", "heap name restored");
+    Receive(OverridePacket(262212, "="));
+    Check(ReadString(inlineScript, 0x24) == "Apir Reaver", "restoring twice is harmless");
+    auto bad = OverridePacket(262212, "PAIR RARVEE");
+    bad.pop_back();
+    Receive(bad);
+    Check(ReadString(inlineScript, 0x24) == "Apir Reaver" && displayed == shown, "truncated override is rejected without effect");
+    Check(Receive(OverridePacket(262212, "PAIR RARVEE")) == 0, "override accepted again after restore");
+    MonsterName::TestExpire();
+    Receive(OverridePacket(262212, "="));
+}
 void TestNativeImage(const char* path) {
     HANDLE file = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     HANDLE mapping = file == INVALID_HANDLE_VALUE ? nullptr : CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
@@ -78,6 +138,10 @@ void TestNativeImage(const char* path) {
     Check(palette[EventNotice::EventColorIndex] == 0xFF42C762 && palette[0x22] == 0xFF4080FF,
           "native event green and Notice blue resolve to expected opaque ARGB values");
     Check(EventNotice::MatchesReference(image), "validation leaves native palette and instructions intact");
+    Check(MonsterName::MatchesReference(image), "monster script table insert fingerprint matches the reference client");
+    image[0xAD4B90 - 0x400000 + 3] ^= 1;
+    Check(!MonsterName::MatchesReference(image), "changed monster table insert disables the name hook");
+    image[0xAD4B90 - 0x400000 + 3] ^= 1;
     VirtualFree(image, 0, MEM_RELEASE); UnmapViewOfFile(raw); CloseHandle(mapping); CloseHandle(file);
 }
 }
@@ -135,6 +199,7 @@ int main(int argc, char** argv) {
     EventNotice::testReady = true; EventNotice::testManager = nullptr; Receive(valid);
     Check(displayed == count + 1, "not-ready or missing UI does not call native dispatch");
     Check(EventNotice::DecodeNotice(reinterpret_cast<void*>(1)) == 73, "unreadable reader is guarded before forwarding unchanged");
+    TestMonsterNames();
     const int sent = broadcast;
     CustomEvents::MapTH::Announce("ordinary GM message");
     CustomEvents::MapTH::Announce("[Event]: injected\nline");

@@ -18,6 +18,7 @@
 #include "Dx9Frame.h"
 #include "Splash.h"
 #include "CustomEvents/EventNotice.h"
+#include "CustomEvents/MonsterName.h"
 #include "Chats/GlobalChat.h"
 #include "Auth/AutotradeLogin.h"
 #include "KioskSearch.h"
@@ -364,6 +365,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     result=DetourUpdateThread(GetCurrentThread());
     if(result==NO_ERROR) result=Bridge::Attach();
     if(result==NO_ERROR) result=EventNotice::Attach();
+    if(result==NO_ERROR) result=MonsterName::Attach();
     if(result==NO_ERROR) result=GlobalChat::Attach();
     if(result==NO_ERROR) result=AutotradeLogin::Attach();
     if(result==NO_ERROR) result=KioskSearch::Attach();
