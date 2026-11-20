@@ -215,6 +215,7 @@ int main() {
         c.Tick(1000);
         auto cmds = c.TakeCommands();
         Check(cmds.size() == 1 && cmds[0].rfind(".cbk1 mine ", 0) == 0, "the first list asks the server what the character owns");
+        Check(c.CurrentPage().loaded && c.CurrentPage().sets.size() == 1 && c.CurrentPage().sets[0].owned == 0 && c.Status().empty(), "the book shows the catalog at once, before the owned data arrives");
         const auto n = NonceOf(cmds[0]);
         c.Receive(Wait(n));
         c.Receive(MineState(n, 2, 1));

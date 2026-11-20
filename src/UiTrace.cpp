@@ -927,6 +927,30 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
     return originalDispatch(self, key, kind, arg);
 }
 
+// The inventory shows its item tooltip from its own per-frame draw method (virtual slot +0x48, 0x0053A620: it draws its children, then calls
+// the tooltip function for the hovered slot, every frame, before the frame is rendered). Doing it after the frame was drawn (at Present) got
+// the tooltip hidden again before it was ever visible for long, which is the blinking. The book window's private vtable therefore replaces
+// its draw slot: original draw first, then the tooltip of the item box under the cursor (UpdateHover decides which item: tooltipItem).
+volatile LONG tooltipItem = 0;
+bool ShowItemTooltip(unsigned itemType, int& step);
+using WindowDrawFn = void(__thiscall*)(void*);
+WindowDrawFn originalDraw = nullptr;
+void __fastcall DetourWindowDraw(void* self, void*) {
+    originalDraw(self);
+    const LONG item = tooltipItem;
+    if (self == prototypeWindow && item) {
+        int step = 0;
+        const bool ok = ShowItemTooltip(static_cast<unsigned>(item), step);
+        static int logged = 0;
+        if ((!ok || logged < 3) && logged < 12) {
+            ++logged;
+            char text[120];
+            std::snprintf(text, sizeof text, "item tooltip (draw) for %ld: %s (step %d)", static_cast<long>(item), ok ? "ok" : "FAILED", step);
+            ProtoLog(text);
+        }
+    }
+}
+
 using GameNewFn = void*(__cdecl*)(std::size_t);
 using PopupCtorFn = void*(__thiscall*)(void*, int, const char*);
 using PushBackFn = void(__thiscall*)(void*, void**);
@@ -951,6 +975,8 @@ int BuildPrototype(unsigned& windowOut) {
         vtableStorage[0] = stock[-1]; // RTTI complete-object locator sits just before the vtable
         std::memcpy(&vtableStorage[1], stock, 48 * sizeof(unsigned));
         vtableStorage[1 + 45] = reinterpret_cast<unsigned>(&DetourWindowDispatch);
+        originalDraw = reinterpret_cast<WindowDrawFn>(stock[18]);   // draw slot (+0x48)
+        vtableStorage[1 + 18] = reinterpret_cast<unsigned>(&DetourWindowDraw);
         *static_cast<unsigned**>(window) = &vtableStorage[1];
         prototypeWindow = window;
         CollectTextControls(window);
@@ -1027,7 +1053,58 @@ constexpr HoverRect HoverRects[] = {
     {10, 8, 62, 63, 24, 7}, {11, 215, 62, 63, 24, 7}, {12, 404, 484, 63, 24, 1}, {21, 442, 484, 63, 24, 2}, {13, 482, 484, 63, 24, 1},
     {14, 326, 484, 63, 24, 1}, {15, 560, 484, 63, 24, 1}, {16, 360, 440, 100, 24, 4}, {19, 470, 440, 120, 24, 4},
     {17, 296, 288, 24, 24, 1}, {18, 624, 288, 24, 24, 1}, {20, 298, 354, 63, 24, 8},
+    // the six boxes of the Collection tab (key 22 + box): the items a rune needs glow and show the game's own item tooltip
+    {22, 380, 130, 36, 36, 2}, {23, 444, 130, 36, 36, 2}, {24, 508, 130, 36, 36, 2},
+    {25, 380, 226, 36, 36, 2}, {26, 444, 226, 36, 36, 2}, {27, 508, 226, 36, 36, 2},
 };
+constexpr int ItemBoxKey0 = 22;
+bool itemGlow = true;   // novaclient.ini [collection_book] item_glow=0 turns the glow of the item boxes off (the tooltip stays)
+
+using WindowShowFn = void(__thiscall*)(void*, int, int);
+WindowShowFn originalWindowShow = reinterpret_cast<WindowShowFn>(0x0058C600);   // stock show/hide of a window: thiscall(window manager, id, show)
+void ProtoLog(const char* text);
+
+// The game's item tooltip for an item type, the way the stock code shows one for an item it only knows by type (the shop list at
+// 0x004C8086): a template record (type in the first dword) is turned into a temporary item object with 0x008A6060 and handed to
+// 0x008BE040, which opens the tooltip window (id 0x57) at the cursor; the object is destroyed afterwards (0x008A5EE0).
+// `step` reports how far it got (for the log): 1 no item manager, 2 item unknown, 3 object built, 4 tooltip called.
+// The tooltip window keeps a pointer to the item object it was shown with (window+0x114) and reads it on later frames, so the object must
+// outlive the call: it lives in this static buffer and is only rebuilt for the next tooltip (destroying it right away, as the shop list
+// does for its one-off tooltips, left the window pointing at stack garbage and made it blink).
+alignas(16) unsigned char heldObject[0x400];
+bool heldBuilt = false;
+bool ShowItemTooltip(unsigned itemType, int& step) {
+    alignas(16) unsigned char record[0x44];
+    unsigned char* const object = heldObject;
+    step = 0;
+    __try {
+        const auto items = *reinterpret_cast<void**>(0x00D3B07C);
+        step = 1;
+        if (!items || !itemType) return false;
+        void* definition = reinterpret_cast<void*(__thiscall*)(void*, unsigned)>(0x00B07F00)(*reinterpret_cast<void**>(static_cast<char*>(items) + 4), itemType);
+        step = 2;
+        if (!definition) return false;
+        if (heldBuilt) { heldBuilt = false; reinterpret_cast<void(__thiscall*)(void*)>(0x008A5EE0)(object); }
+        std::memset(record, 0, sizeof record);
+        std::memset(object, 0, sizeof heldObject);
+        *reinterpret_cast<unsigned*>(record) = itemType;
+        reinterpret_cast<void*(__thiscall*)(void*, const void*, void*)>(0x008A6060)(object, record, definition);
+        heldBuilt = true;
+        step = 3;
+        reinterpret_cast<void(__thiscall*)(void*, void*, int, int, int, int, int, int)>(0x008BE040)(items, object, 0, 0, 0, 0, -1, 0);
+        step = 5;   // the object stays alive for the tooltip window
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+void HideItemTooltip() {
+    __try {
+        const auto context = *reinterpret_cast<char**>(0x00D44A2C);
+        if (!context) return;
+        void* windows = *reinterpret_cast<void**>(*reinterpret_cast<char**>(context + 0x1C) + 0x14);
+        if (windows) originalWindowShow(windows, 0x57, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
 
 void UpdateHover() {
     LONG found = -1;
@@ -1041,11 +1118,37 @@ void UpdateHover() {
             ScreenToClient(foreground, &pt)) {
             const int mx = pt.x - win[0x3C / 4], my = pt.y - win[0x40 / 4];
             for (const HoverRect& r : HoverRects) {
+                if (r.key >= ItemBoxKey0) {   // only boxes that hold an item
+                    const unsigned item = iconItem[30 + r.key - ItemBoxKey0];
+                    if (!item || (item & 0x80000000u)) continue;
+                }
                 if ((r.mask & ActiveBits()) && mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) found = r.key;
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { found = -1; }
-    hoverKey = found;
+    // The tooltip belongs to the box the cursor is on. The hover test can drop out for a few frames while the tooltip window opens (the log
+    // showed enter/leave pairs 47 ms apart, each hiding and rebuilding the tooltip), so leaving a box only counts after 150 ms.
+    static LONG tooltipKey = -1;
+    static ULONGLONG lostSince = 0;
+    const ULONGLONG now = GetTickCount64();
+    if (found >= ItemBoxKey0) {
+        lostSince = 0;
+        if (found != tooltipKey) {
+            tooltipKey = found;
+            // The book window's draw shows the tooltip of this item every frame (see DetourWindowDraw), like the inventory does.
+            InterlockedExchange(&tooltipItem, static_cast<LONG>(iconItem[30 + found - ItemBoxKey0]));
+        }
+    } else if (tooltipKey >= ItemBoxKey0) {
+        if (!lostSince) lostSince = now;
+        if (now - lostSince > 150) {
+            InterlockedExchange(&tooltipItem, 0);
+            HideItemTooltip();
+            tooltipKey = -1;
+            lostSince = 0;
+        }
+    }
+    hoverKey = (found < 0 && tooltipKey >= ItemBoxKey0) ? tooltipKey : found;
+    if (!itemGlow && hoverKey >= ItemBoxKey0) hoverKey = -1;   // the glow stays during a short drop-out too
 }
 
 // Re-applies the window texts whenever the client received something new.
@@ -1054,6 +1157,13 @@ void Refresh() {
     auto& client = CollectionBookClient::Shared();
     std::vector<CollectionBookClient::Reward> rewards;
     if (client.TakeRewards(rewards)) OpenResults(rewards);
+    // The first `.cbook` of a session opens the book and then the bridge resets the client data (it just learned the session): show
+    // the catalog again at once instead of leaving the window empty until it is reopened.
+    if (client.Local() && activeMode <= 2 && !client.CurrentPage().loaded && Bridge::SessionMatches() && WindowAlive() &&
+        reinterpret_cast<const int*>(prototypeWindow)[0x38 / 4]) {
+        lastVersion = ~0u;
+        client.RequestList(currentCategory, 0);
+    }
     if (client.Version() == lastVersion) return;
     lastVersion = client.Version();
     if (activeMode == 3) {
@@ -1107,6 +1217,7 @@ LONG Attach() {
             ProtoLog(text);
         }
     }
+    itemGlow = GetPrivateProfileIntW(L"collection_book", L"item_glow", 1, L".\\novaclient.ini") != 0;
     if (prototypeEnabled) {
         // The catalog (names, costs, texts) is read from the client data files; without them the server keeps sending everything.
         const char* narrow = ".\\data";

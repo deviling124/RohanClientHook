@@ -117,10 +117,11 @@ void Client::QueueState() {
 
 void Client::RequestList(unsigned category, unsigned page) {
     if (local_.Loaded()) {
-        // Pages come from the local files; the server is asked only when the owned data is missing or older than half a minute.
+        // Pages come from the local files and are shown at once (everything locked until the owned data arrives); the server is
+        // asked only when the owned data is missing or older than half a minute.
         wantCategory_ = category; wantPage_ = page;
-        if (!stateLoaded_ || now_ - stateAt_ > 30000) { QueueState(); SetStatus("Loading..."); }
-        if (stateLoaded_) RebuildPage();
+        if (!stateLoaded_ || now_ - stateAt_ > 30000) QueueState();
+        RebuildPage();
         return;
     }
     // A newer list replaces an older queued one: the player only cares about the page they asked for last.
