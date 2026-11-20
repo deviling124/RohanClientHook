@@ -172,10 +172,12 @@ int main() {
         Check(dc.size() == 1 && dc[0].rfind(".cbk1 dis ", 0) == 0 && dc[0].find(" 4001 2") != std::string::npos, "dis sent with item and mode");
         const auto dn2 = NonceOf(dc[0]);
         d.Receive(DisResult(dn2, 0, 4001, 2, 2));
-        d.Receive(DGot(dn2, 0, 30, "Dust"));
+        d.Receive(DGot(dn2, 0, 30, 100, "Dust"));
         Check(d.Busy(), "the answer waits for all rewards");
-        d.Receive(DGot(dn2, 1, 1, "Gem"));
-        Check(d.Status() == "Received: Dust x30, Gem x1 (Event Inventory).", "the rewards are listed");
+        d.Receive(DGot(dn2, 1, 1, 101, "Gem"));
+        std::vector<Reward> got;
+        Check(d.TakeRewards(got) && got.size() == 2 && got[0].item == 100 && got[0].amount == 30 && got[1].name == "Gem" && !d.TakeRewards(got), "the rewards are handed out once for the popup");
+        Check(d.Status().empty(), "the popup shows the rewards, the status stays empty");
         d.Tick(9000);
         dc = d.TakeCommands();
         Check(dc.size() == 1 && dc[0].rfind(".cbk1 dlist ", 0) == 0, "the list is refreshed after a disassembly");

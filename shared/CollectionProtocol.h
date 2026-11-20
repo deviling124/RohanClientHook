@@ -33,7 +33,7 @@
 //   CBK1 claim <nonce> <result> <setId> <tier> <claimedBits>   result 0 = granted (to the Event Inventory), 1 unknown set, 2 not activated,
 //                                                             3 nothing ready, 6 Event Inventory full; tier 1 activation, 2-6 runes, 7 completion
 //   CBK1 dstate <nonce> <page> <pages> <count>        then `CBK1 ditem <nonce> <index> <itemType> <count> <hex name>` per row (answer of dlist)
-//   CBK1 dis <nonce> <result> <itemType> <mode> <n>   then `CBK1 dgot <nonce> <index> <amount> <hex name>` for each of the n rewards;
+//   CBK1 dis <nonce> <result> <itemType> <mode> <n>   then `CBK1 dgot <nonce> <index> <amount> <itemType> <hex name>` for each of the n rewards;
 //                                                     result 0 done, 1 not decomposable, 2 that mode is not available, 7 not enough items,
 //                                                     6 rewards could not be stored (Event Inventory full)
 //   CBK1 error <nonce> <code>                                 1 disabled, 2 internal, 3 busy, 4 bad request, 7 not loaded,
@@ -196,8 +196,8 @@ inline std::string DItem(std::uint32_t nonce, unsigned index, unsigned item, uns
 inline std::string DisResult(std::uint32_t nonce, int result, unsigned item, unsigned mode, unsigned n) {
     return "CBK1 dis " + N(nonce) + " " + std::to_string(result) + " " + N(item) + " " + N(mode) + " " + N(n);
 }
-inline std::string DGot(std::uint32_t nonce, unsigned index, int amount, const std::string& name) {
-    return "CBK1 dgot " + N(nonce) + " " + N(index) + " " + std::to_string(amount) + " " + Hex(name);
+inline std::string DGot(std::uint32_t nonce, unsigned index, int amount, unsigned item, const std::string& name) {
+    return "CBK1 dgot " + N(nonce) + " " + N(index) + " " + std::to_string(amount) + " " + N(item) + " " + Hex(name);
 }
 inline std::string RegResult(std::uint32_t nonce, int result, int set, unsigned slot, unsigned owned) {
     return "CBK1 reg " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + N(slot) + " " + N(owned);

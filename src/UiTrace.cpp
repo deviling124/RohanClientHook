@@ -308,6 +308,10 @@ volatile LONG selectedSet = 0;  // set row currently selected (0..4); drives the
 // Active tab: 1 Sets, 2 Collection, 3 Decompose. Layout images wrapped by gate() in the layout script (AliasFlag | mask << 16 |
 // real id, mask bit n = tab n+1) are drawn only while their tab is active.
 volatile LONG activeMode = 1;
+// The results popup (what a disassembly gave) is an overlay of the book window: layout images with mask bit 8 are drawn only while it is open.
+volatile LONG resultsOpen = 0;
+constexpr int OverlayBit = 8;
+int ActiveBits() { return (1 << (activeMode - 1)) | (resultsOpen ? OverlayBit : 0); }
 constexpr int AliasFlag = 0x100000;
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
@@ -357,8 +361,8 @@ bool LookupItemHandle(unsigned type, std::uint32_t out[2]) {
 
 void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, int id) {
     if (id & AliasFlag) {
-        const int mask = (id >> 16) & 7;
-        if (mask & (1 << (activeMode - 1))) DetourImageResolve(self, edx, out, id & 0xFFFF);
+        const int mask = (id >> 16) & 15;
+        if (mask & ActiveBits()) DetourImageResolve(self, edx, out, id & 0xFFFF);
         else out[0] = out[1] = 0xFFFFFFFFu;
         return;
     }
@@ -468,6 +472,8 @@ enum TextId {
     CollRow0 = 1050,   // 1050..1054: Collection tab row names
     CollCounter = 1065, DecompMsg = 1070, DecompEmpty = 1071, DecompBtn = 1072, DecompBtn30 = 1073, PrevLabel = 1080, NextLabel = 1081,
     ScrollUpLabel = 1090, ScrollDownLabel = 1091,
+    PopCount0 = 1100,  // 1100..1107: the counts under the eight reward slots of the results popup
+    PopTitle = 1110, PopConfirm = 1111,
 };
 constexpr UINT_PTR TextVtable = 0x00C2EB54;
 using SetTextFn = void(__thiscall*)(void*, const char*);
@@ -602,7 +608,7 @@ void ApplyRows() {
         const bool shown = Bridge::SessionMatches() && d.loaded;
         for (int r = 0; r < 5; ++r) {
             const bool have = shown && static_cast<std::size_t>(r) < d.items.size();
-            const std::string label = have ? d.items[static_cast<std::size_t>(r)].name + " x" + std::to_string(d.items[static_cast<std::size_t>(r)].count) : std::string();
+            const std::string label = have ? "[" + std::to_string(d.items[static_cast<std::size_t>(r)].count) + "] " + d.items[static_cast<std::size_t>(r)].name : std::string();
             SetControlText(RowTitle0 + r, label.c_str());
             for (int c = 0; c < 6; ++c) iconItem[r * 6 + c] = (have && c == 0) ? d.items[static_cast<std::size_t>(r)].item : 0u;
         }
@@ -742,6 +748,24 @@ void ApplySelection(int row) {
 
 // Switches the visible content to a tab: clears the texts of the other tabs, writes this tab's fixed labels and refills the
 // rows and the selection. The images follow activeMode on their own (see DetourImageResolve).
+void OpenResults(const std::vector<CollectionBookClient::Reward>& rewards) {
+    for (int k = 0; k < 8; ++k) {
+        const bool have = static_cast<std::size_t>(k) < rewards.size();
+        iconItem[36 + k] = have ? rewards[static_cast<std::size_t>(k)].item : 0u;
+        RawSetText(PopCount0 + k, have ? std::to_string(rewards[static_cast<std::size_t>(k)].amount).c_str() : "");
+    }
+    RawSetText(PopTitle, "Decomposition Results");
+    RawSetText(PopConfirm, "Confirm");
+    resultsOpen = 1;
+}
+
+void CloseResults() {
+    resultsOpen = 0;
+    for (int k = 0; k < 8; ++k) { iconItem[36 + k] = 0u; RawSetText(PopCount0 + k, ""); }
+    RawSetText(PopTitle, "");
+    RawSetText(PopConfirm, "");
+}
+
 void ApplyMode(unsigned mode) {
     currentCategory = mode;
     activeMode = static_cast<LONG>(mode);
@@ -750,7 +774,8 @@ void ApplyMode(unsigned mode) {
     showRewards = false;
     static const int tabSpecific[] = {
         1010, 1011, 1012, 1013, 1014, 1020, 1021, 1022, 1023, 1024, 1025, 1050, 1051, 1052, 1053, 1054, 1065,
-        1001, 1004, 1030, 1031, 1040, 1041, 1042, 1070, 1071, 1072, 1073, 1080, 1081, 1090, 1091};
+        1001, 1004, 1030, 1031, 1040, 1041, 1042, 1070, 1071, 1072, 1073, 1080, 1081, 1090, 1091,
+        1100, 1101, 1102, 1103, 1104, 1105, 1106, 1107, 1110, 1111};
     for (int id : tabSpecific) RawSetText(id, "");
     if (mode <= 3) {
         RawSetText(PrevLabel, "Prev");
@@ -781,7 +806,7 @@ void* prototypeWindow = nullptr;
 // (tools/make_collection_book_layout.py, KEYS): 0 drag bar, 1 close X, 2..4 category tabs, 5..9 set rows, 10 prev,
 // 11 next, 12 Register, 13 Upgrade, 14 Rewards view, 15 Claim. Close (1) keeps the stock handler.
 unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int kind, int arg) {
-    if (self == prototypeWindow && kind == 0 && key >= 2 && key <= 19) {
+    if (self == prototypeWindow && kind == 0 && key >= 2 && key <= 20) {
         char text[100];
         std::snprintf(text, sizeof text, "click key=%d", key);
         ProtoLog(text);
@@ -790,7 +815,11 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
         const int mode = static_cast<int>(activeMode);
         // Which controls exist on which tab: rows, paging and Register on Sets and Collection; Upgrade/Rewards/Claim on Sets;
         // Disassemble on Decompose. The layout hides the others, so their clicks are ignored.
-        const bool allowed = key <= 4 || (key <= 11 ? mode <= 3 : key == 12 ? mode <= 2 : key <= 15 ? mode == 1 : (key == 16 || key == 19) ? mode == 3 : mode <= 2);
+        if (resultsOpen) {  // the results popup is modal: only its Confirm button works
+            if (key == 20) CloseResults();
+            return 1;
+        }
+        const bool allowed = key == 20 ? false : key <= 4 || (key <= 11 ? mode <= 3 : key == 12 ? mode <= 2 : key <= 15 ? mode == 1 : (key == 16 || key == 19) ? mode == 3 : mode <= 2);
         if (!allowed) return 1;
         if (key >= 2 && key <= 4) {
             ApplyMode(static_cast<unsigned>(key - 1));
@@ -976,7 +1005,7 @@ struct HoverRect { int key, x, y, w, h, mask; };
 constexpr HoverRect HoverRects[] = {
     {10, 8, 62, 63, 24, 7}, {11, 215, 62, 63, 24, 7}, {12, 404, 484, 63, 24, 3}, {13, 482, 484, 63, 24, 1},
     {14, 326, 484, 63, 24, 1}, {15, 560, 484, 63, 24, 1}, {16, 360, 440, 100, 24, 4}, {19, 470, 440, 120, 24, 4},
-    {17, 296, 288, 24, 24, 3}, {18, 624, 288, 24, 24, 3},
+    {17, 296, 288, 24, 24, 3}, {18, 624, 288, 24, 24, 3}, {20, 298, 354, 63, 24, 8},
 };
 
 void UpdateHover() {
@@ -991,7 +1020,7 @@ void UpdateHover() {
             ScreenToClient(foreground, &pt)) {
             const int mx = pt.x - win[0x3C / 4], my = pt.y - win[0x40 / 4];
             for (const HoverRect& r : HoverRects) {
-                if ((r.mask & (1 << (activeMode - 1))) && mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) found = r.key;
+                if ((r.mask & ActiveBits()) && mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) found = r.key;
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { found = -1; }
@@ -1002,6 +1031,8 @@ void UpdateHover() {
 void Refresh() {
     if (!prototypeBuilt) return;
     auto& client = CollectionBookClient::Shared();
+    std::vector<CollectionBookClient::Reward> rewards;
+    if (client.TakeRewards(rewards)) OpenResults(rewards);
     if (client.Version() == lastVersion) return;
     lastVersion = client.Version();
     if (activeMode == 3) {

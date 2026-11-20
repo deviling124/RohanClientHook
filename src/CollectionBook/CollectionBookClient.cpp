@@ -57,6 +57,9 @@ void Client::Reset() {
     decompBuilding_ = {};
     decompExpected_ = disExpected_ = 0;
     disGot_.clear();
+    disRewards_.clear();
+    ready_.clear();
+    rewardsReady_ = false;
     commands_.clear();
     batch_ = {};
     status_.clear();
@@ -350,7 +353,7 @@ void Client::Receive(const std::string& line) {
         int result = 0;
         unsigned item = 0, mode = 0, n = 0;
         if (!CollectionWire::Number(w[3], result) || !CollectionWire::Number(w[4], item) || !CollectionWire::Number(w[5], mode) || !CollectionWire::Number(w[6], n)) return;
-        if (result == 0 && n > 0) { disExpected_ = n; disGot_.clear(); return; }  // the rewards follow
+        if (result == 0 && n > 0) { disExpected_ = n; disGot_.clear(); disRewards_.clear(); return; }  // the rewards follow
         switch (result) {
         case 0: SetStatus("Nothing came out of it."); break;
         case 1: SetStatus("That item cannot be disassembled."); break;
@@ -363,17 +366,19 @@ void Client::Receive(const std::string& line) {
         RequestDList(decomp_.page);
         return;
     }
-    if (kind == "dgot" && inFlight_.req.kind == Kind::Disassemble && w.size() == 6) {
-        unsigned index = 0;
+    if (kind == "dgot" && inFlight_.req.kind == Kind::Disassemble && w.size() == 7) {
+        unsigned index = 0, item = 0;
         int amount = 0;
         std::string name;
-        if (!CollectionWire::Number(w[3], index) || !CollectionWire::Number(w[4], amount) || !CollectionWire::Unhex(w[5], name, CollectionWire::MaxName) || !disExpected_) return;
+        if (!CollectionWire::Number(w[3], index) || !CollectionWire::Number(w[4], amount) || !CollectionWire::Number(w[5], item) ||
+            !CollectionWire::Unhex(w[6], name, CollectionWire::MaxName) || !disExpected_) return;
         disGot_.push_back(name + " x" + std::to_string(amount));
+        disRewards_.push_back({item, amount, name});
         if (disGot_.size() >= disExpected_) {
-            std::string text = "Received: ";
-            for (std::size_t i = 0; i < disGot_.size(); ++i) text += (i ? ", " : "") + disGot_[i];
-            SetStatus(text + " (Event Inventory).");
+            SetStatus("");  // the results popup shows what was received
             disExpected_ = 0;
+            ready_ = disRewards_;
+            rewardsReady_ = true;
             Finish(now_);
             RequestDList(decomp_.page);
         }

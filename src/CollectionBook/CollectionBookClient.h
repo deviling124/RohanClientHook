@@ -51,6 +51,9 @@ struct DecompPage {
     bool loaded = false;
 };
 
+// What one disassembly gave (shown in the results popup).
+struct Reward { unsigned item = 0; int amount = 0; std::string name; };
+
 struct Page {
     unsigned category = 1, page = 0, pages = 1, count = 0;
     std::vector<SetView> sets;          // at most CollectionWire::PageSize
@@ -89,6 +92,14 @@ public:
 
     const Page& CurrentPage() const { return page_; }
     const DecompPage& Decomp() const { return decomp_; }
+    // True once for every finished disassembly that gave something; `out` receives its rewards.
+    bool TakeRewards(std::vector<Reward>& out) {
+        if (!rewardsReady_) return false;
+        out = std::move(ready_);
+        ready_.clear();
+        rewardsReady_ = false;
+        return true;
+    }
     SetView* FindSet(int id);
     const std::string& Status() const { return status_; }
     bool Busy() const { return inFlight_.active || !queue_.empty(); }
@@ -114,6 +125,8 @@ private:
     DecompPage decomp_, decompBuilding_;
     unsigned decompExpected_ = 0, disExpected_ = 0;
     std::vector<std::string> disGot_;
+    std::vector<Reward> disRewards_, ready_;
+    bool rewardsReady_ = false;
     std::vector<std::string> commands_;
     std::string status_;
     Batch batch_;
