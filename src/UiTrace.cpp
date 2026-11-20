@@ -315,6 +315,7 @@ int ActiveBits() { return (1 << (activeMode - 1)) | (resultsOpen ? OverlayBit : 
 constexpr int AliasFlag = 0x100000;
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
+constexpr int FirstItemBoxKey = 22;   // hover keys from here on are the item boxes of the Collection tab (glow textures); below: buttons
 constexpr int HoverFillIds = 0x7050;
 constexpr int HoverEdgeIds = 0x7070;
 // Selection glow: five fill ids (0x7030 + row) and five border ids (0x7040 + row) resolve to the glow textures only while
@@ -385,6 +386,18 @@ void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, in
     if ((id >= HoverFillIds && id < HoverFillIds + 0x20) || (id >= HoverEdgeIds && id < HoverEdgeIds + 0x20)) {
         const bool fill = id < HoverEdgeIds;
         const int key = id - (fill ? HoverFillIds : HoverEdgeIds);
+        if (key < FirstItemBoxKey) {
+            // The action buttons use the stock button pictures: focused while the mouse is over, pushed while it is down (the normal
+            // picture is drawn by the layout underneath). 0x875/0x876 = etc_btn_1, 0x878/0x879 = etc_btn_2 (the wide buttons).
+            if (fill && key == hoverKey) {
+                const bool wide = key == 16 || key == 19;
+                const bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                originalResolve(self, out, wide ? (down ? 0x879 : 0x878) : (down ? 0x876 : 0x875));
+            } else {
+                out[0] = out[1] = 0xFFFFFFFFu;
+            }
+            return;
+        }
         if (key == hoverKey) originalResolve(self, out, fill ? GlowFillTex : GlowEdgeTex);
         else out[0] = out[1] = 0xFFFFFFFFu;
         return;
