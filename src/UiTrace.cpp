@@ -369,6 +369,11 @@ void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, in
     if (id >= IconIdBase && id < IconIdBase + IconIdCount) {
         std::uint32_t handle[2]{};
         const unsigned type = iconItem[id - IconIdBase];
+        if (type & 0x80000000u) {   // a rune picture (.gtx registered in the texture table): resolve its image id like our own textures
+            out[0] = out[1] = 0xFFFFFFFFu;
+            originalResolve(self, out, static_cast<int>(type & 0xFFFFu));
+            return;
+        }
         if (type && LookupItemHandle(type, handle)) {
             out[0] = handle[0];
             out[1] = handle[1];
@@ -467,6 +472,7 @@ bool DispatchMatches() {
 enum TextId {
     TitleText = 1000, PageText = 1001, SelName = 1002, SelInfo = 1003, EffectText = 1004, BtnText = 1030, ViewTitle = 1031,
     RowTitle0 = 1010,  // 1010..1014
+    CollBtn = 1032,    // Collection tab: label of the centred Unlock button
     Counter0 = 1020,   // 1020..1025
     UpgradeLabel = 1040, RewardsLabel = 1041, ClaimLabel = 1042,
     CollRow0 = 1050,   // 1050..1054: Collection tab row names
@@ -522,8 +528,9 @@ bool RawSetText(int id, const char* text) {
 int RouteText(int id) {
     const int m = static_cast<int>(activeMode);
     if (id >= RowTitle0 && id < RowTitle0 + 5) return m == 1 ? id : (m == 2 || m == 3) ? CollRow0 + (id - RowTitle0) : -1;
-    if (id >= Counter0 && id < Counter0 + 6) return m == 1 ? id : (m == 2 && id == Counter0) ? CollCounter : -1;
-    if (id == EffectText || id == ViewTitle || id == BtnText || id == PageText) return m <= 2 ? id : -1;
+    if (id >= Counter0 && id < Counter0 + 6) return m <= 2 ? id : -1;   // Sets: the runes; Collection: the amounts of the items a rune needs
+    if (id == BtnText) return m == 1 ? id : m == 2 ? static_cast<int>(CollBtn) : -1;
+    if (id == EffectText || id == ViewTitle || id == PageText) return m <= 2 ? id : -1;
     return id;
 }
 
@@ -696,13 +703,25 @@ void ApplySelection(int row) {
         selectedSet = row;
         const auto& set = page.sets[row];
         int owned = 0;
-        for (int i = 0; i < 6; ++i) {
-            iconItem[30 + i] = set.items[i];
-            const bool have = set.items[i] && (set.owned & (1u << i));
-            owned += have ? 1 : 0;
-            SetControlText(Counter0 + i, set.items[i] ? (have ? "1 / 1" : "0 / 1") : "");
-        }
         const bool isRune = CollectionBookClient::IsRune(set);
+        bool hasNeeds = false;
+        for (int i = 0; i < 5; ++i) hasNeeds = hasNeeds || set.needItem[i];
+        if (isRune && hasNeeds) {
+            // Collection: one box per item the rune needs (the item's own picture) with the amount underneath; the sixth stays empty.
+            owned = (set.owned & 1u) ? 1 : 0;
+            for (int i = 0; i < 6; ++i) {
+                const bool used = i < 5 && set.needItem[i];
+                iconItem[30 + i] = used ? set.needItem[i] : 0u;
+                SetControlText(Counter0 + i, used ? ("x" + std::to_string(set.needAmount[i])).c_str() : "");
+            }
+        } else {
+            for (int i = 0; i < 6; ++i) {
+                iconItem[30 + i] = set.items[i];
+                const bool have = set.items[i] && (set.owned & (1u << i));
+                owned += have ? 1 : 0;
+                SetControlText(Counter0 + i, set.items[i] ? (have ? "1 / 1" : "0 / 1") : "");
+            }
+        }
         const bool active = CollectionBookClient::Active(set);
         char info[100];
         if (isRune) std::snprintf(info, sizeof info, "%s", owned ? "Rune unlocked" : "Rune locked");
@@ -723,7 +742,8 @@ void ApplySelection(int row) {
         } else if (set.effectLoaded) {
             std::vector<Section> sections;
             AddSections(sections, set.effect);
-            if (set.upgradeLoaded) AddSections(sections, set.upgrade);
+            if (isRune) { if (sections.size() > 1) sections.resize(1); }   // a rune only shows its requirement
+            else if (set.upgradeLoaded) AddSections(sections, set.upgrade);
             ShowSections(sections, set.id);
         } else SetControlText(EffectText, "Loading...");
         if ((!set.effectLoaded || !set.upgradeLoaded || !set.rewardsLoaded) && infoRequestedFor != set.id) { infoRequestedFor = set.id; client.RequestInfo(set.id); }
@@ -774,14 +794,14 @@ void ApplyMode(unsigned mode) {
     showRewards = false;
     static const int tabSpecific[] = {
         1010, 1011, 1012, 1013, 1014, 1020, 1021, 1022, 1023, 1024, 1025, 1050, 1051, 1052, 1053, 1054, 1065,
-        1001, 1004, 1030, 1031, 1040, 1041, 1042, 1070, 1071, 1072, 1073, 1080, 1081, 1090, 1091,
+        1001, 1004, 1030, 1031, 1032, 1040, 1041, 1042, 1070, 1071, 1072, 1073, 1080, 1081, 1090, 1091,
         1100, 1101, 1102, 1103, 1104, 1105, 1106, 1107, 1110, 1111};
     for (int id : tabSpecific) RawSetText(id, "");
     if (mode <= 3) {
         RawSetText(PrevLabel, "Prev");
         RawSetText(NextLabel, "Next");
     }
-    if (mode <= 2) {
+    if (mode == 1) {   // the section arrows exist on the Sets tab only
         RawSetText(ScrollUpLabel, "<");
         RawSetText(ScrollDownLabel, ">");
     }
@@ -806,7 +826,7 @@ void* prototypeWindow = nullptr;
 // (tools/make_collection_book_layout.py, KEYS): 0 drag bar, 1 close X, 2..4 category tabs, 5..9 set rows, 10 prev,
 // 11 next, 12 Register, 13 Upgrade, 14 Rewards view, 15 Claim. Close (1) keeps the stock handler.
 unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int kind, int arg) {
-    if (self == prototypeWindow && kind == 0 && key >= 2 && key <= 20) {
+    if (self == prototypeWindow && kind == 0 && key >= 2 && key <= 21) {
         char text[100];
         std::snprintf(text, sizeof text, "click key=%d", key);
         ProtoLog(text);
@@ -819,7 +839,8 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
             if (key == 20) CloseResults();
             return 1;
         }
-        const bool allowed = key == 20 ? false : key <= 4 || (key <= 11 ? mode <= 3 : key == 12 ? mode <= 2 : key <= 15 ? mode == 1 : (key == 16 || key == 19) ? mode == 3 : mode <= 2);
+        // 12 Register / 13 Upgrade / 14 Rewards / 15 Claim / 17-18 section arrows: Sets only; 21 Unlock: Collection only.
+        const bool allowed = key == 20 ? false : key <= 4 || (key <= 11 ? mode <= 3 : key == 21 ? mode == 2 : key <= 15 ? mode == 1 : (key == 16 || key == 19) ? mode == 3 : mode == 1);
         if (!allowed) return 1;
         if (key >= 2 && key <= 4) {
             ApplyMode(static_cast<unsigned>(key - 1));
@@ -875,7 +896,7 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
                     else client.RequestUpgrade(chosen.id);
                 }
             }
-        } else if (key == 12) {
+        } else if (key == 12 || key == 21) {
             if (online && Live()) {
                 const auto& page = client.CurrentPage();
                 if (static_cast<std::size_t>(selectedSet) < page.sets.size()) {
@@ -1003,9 +1024,9 @@ void OpenBook() {
 // Hover glow of the action buttons (layout: buttons list in make_collection_book_layout.py; rectangles are window-relative).
 struct HoverRect { int key, x, y, w, h, mask; };
 constexpr HoverRect HoverRects[] = {
-    {10, 8, 62, 63, 24, 7}, {11, 215, 62, 63, 24, 7}, {12, 404, 484, 63, 24, 3}, {13, 482, 484, 63, 24, 1},
+    {10, 8, 62, 63, 24, 7}, {11, 215, 62, 63, 24, 7}, {12, 404, 484, 63, 24, 1}, {21, 442, 484, 63, 24, 2}, {13, 482, 484, 63, 24, 1},
     {14, 326, 484, 63, 24, 1}, {15, 560, 484, 63, 24, 1}, {16, 360, 440, 100, 24, 4}, {19, 470, 440, 120, 24, 4},
-    {17, 296, 288, 24, 24, 3}, {18, 624, 288, 24, 24, 3}, {20, 298, 354, 63, 24, 8},
+    {17, 296, 288, 24, 24, 1}, {18, 624, 288, 24, 24, 1}, {20, 298, 354, 63, 24, 8},
 };
 
 void UpdateHover() {

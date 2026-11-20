@@ -4,7 +4,8 @@
 // strings as fixed-size NUL-padded ASCII/Big5. The server keeps the authoritative catalog (YAML); tools\CollectionBinTool writes these
 // files from it and tools\CollectionBinEditor edits them. Mirrored in RohanClient_Hook\shared\CollectionBinFormat.h.
 //
-//   cb_rune.bin    108 bytes  ID i32, Item i32, Icon i32, Name[48], ItemName[48]
+//   cb_rune.bin    416 bytes  ID i32, Icon i32 (item type whose icon is shown), IconFile[32] (name of a .gtx in Bitmaps\Interface4\CollectionBook\sets, empty = use Icon),
+//                             Name[48], ItemName[48], then 5 x { Item i32, Amount i32, Name[48] } (the items handed in to unlock; Item 0 = unused)
 //   cb_set.bin      84 bytes  ID i32, Name[48], Rune0..Rune5 i32, Crones i64
 //   cb_bonus.bin    24 bytes  SetID, UnlockedCount, Kind (1 VIT 2 STR 3 DEX 4 AGI), Value, LevelDivisor, PerLevel  (6 x i32)
 //   cb_level.bin   216 bytes  SetID i32, Level i32, Crones i64, Rate i32, Pity i32, then 4 x { Item i32, Amount i32, Name[40] }
@@ -20,10 +21,14 @@
 
 namespace CollectionBin {
 
-constexpr std::size_t RuneRecord = 108, SetRecord = 84, BonusRecord = 24, LevelRecord = 216, RewardRecord = 56;
-constexpr int LevelItems = 4;
+constexpr std::size_t RuneRecord = 416, SetRecord = 84, BonusRecord = 24, LevelRecord = 216, RewardRecord = 56;
+constexpr int LevelItems = 4, RuneItems = 5;
 
-struct Rune { int id = 0; int item = 0; int icon = 0; std::string name, itemName; };
+struct RuneItem { int item = 0, amount = 0; std::string name; };
+// Rune pictures from .gtx files use image ids IconImageBase + (position of the rune in cb_rune.bin); a slot value with IconImageFlag set
+// means "draw this image id" instead of "draw the icon of this item type".
+constexpr unsigned IconImageFlag = 0x80000000u, IconImageBase = 0x7200u, MaxIconImages = 0x200u;
+struct Rune { int id = 0; int icon = 0; std::string iconFile, name, itemName; RuneItem needs[RuneItems]; };
 struct Set { int id = 0; std::string name; int runes[6]{}; long long crones = 0; };
 struct Bonus { int setId = 0, count = 0, kind = 0, value = 0, divisor = 1, perLevel = 0; };
 struct LevelItem { int item = 0, amount = 0; std::string name; };
@@ -70,7 +75,10 @@ inline bool WriteAll(const std::string& path, const std::string& data) {
 
 inline std::string SerializeRunes(const Catalog& c) {
     std::string out;
-    for (const auto& r : c.runes) { detail::PutInt(out, r.id); detail::PutInt(out, r.item); detail::PutInt(out, r.icon); detail::PutText(out, r.name, 48); detail::PutText(out, r.itemName, 48); }
+    for (const auto& r : c.runes) {
+        detail::PutInt(out, r.id); detail::PutInt(out, r.icon); detail::PutText(out, r.iconFile, 32); detail::PutText(out, r.name, 48); detail::PutText(out, r.itemName, 48);
+        for (int i = 0; i < RuneItems; ++i) { detail::PutInt(out, r.needs[i].item); detail::PutInt(out, r.needs[i].amount); detail::PutText(out, r.needs[i].name, 48); }
+    }
     return out;
 }
 inline std::string SerializeSets(const Catalog& c) {
@@ -117,7 +125,8 @@ inline bool Read(const std::string& dir, Catalog& out, std::string& error) {
     };
     if (!check("cb_rune.bin", RuneRecord, true)) return false;
     for (const char* p = data.data(); p < data.data() + data.size();) {
-        Rune r; r.id = detail::GetInt(p); r.item = detail::GetInt(p); r.icon = detail::GetInt(p); r.name = detail::GetText(p, 48); r.itemName = detail::GetText(p, 48);
+        Rune r; r.id = detail::GetInt(p); r.icon = detail::GetInt(p); r.iconFile = detail::GetText(p, 32); r.name = detail::GetText(p, 48); r.itemName = detail::GetText(p, 48);
+        for (int i = 0; i < RuneItems; ++i) { r.needs[i].item = detail::GetInt(p); r.needs[i].amount = detail::GetInt(p); r.needs[i].name = detail::GetText(p, 48); }
         c.runes.push_back(std::move(r));
     }
     if (!check("cb_set.bin", SetRecord, true)) return false;
@@ -152,10 +161,22 @@ inline std::vector<std::string> Validate(const Catalog& c) {
     for (const auto& r : c.runes) {
         if (r.id < 1 || r.id > 900000) p.push_back("cb_rune: ID " + std::to_string(r.id) + " must be between 1 and 900000");
         if (!runeIds.insert(r.id).second) p.push_back("cb_rune: ID " + std::to_string(r.id) + " is used twice");
-        if (r.item <= 0) p.push_back("cb_rune: rune " + std::to_string(r.id) + " needs an Item");
-        else if (!runeItems.insert(r.item).second) p.push_back("cb_rune: item " + std::to_string(r.item) + " unlocks more than one rune");
+        if (r.needs[0].item <= 0) p.push_back("cb_rune: rune " + std::to_string(r.id) + " needs an Item (requirement 1)");
+        else if (!runeItems.insert(r.needs[0].item).second) p.push_back("cb_rune: item " + std::to_string(r.needs[0].item) + " unlocks more than one rune");
+        for (int i = 0; i < RuneItems; ++i) {
+            if (r.needs[i].item <= 0) { if (i > 0 && r.needs[i].amount) p.push_back("cb_rune: rune " + std::to_string(r.id) + " requirement " + std::to_string(i + 1) + " has an Amount but no Item"); continue; }
+            if (r.needs[i].amount < 1) p.push_back("cb_rune: rune " + std::to_string(r.id) + " requirement " + std::to_string(i + 1) + ": Amount must be at least 1");
+            if (r.needs[i].name.empty()) p.push_back("cb_rune: rune " + std::to_string(r.id) + " requirement " + std::to_string(i + 1) + " needs a Name");
+            for (int k = 0; k < i; ++k) if (r.needs[k].item == r.needs[i].item) p.push_back("cb_rune: rune " + std::to_string(r.id) + " lists item " + std::to_string(r.needs[i].item) + " twice");
+        }
         if (r.name.empty()) p.push_back("cb_rune: rune " + std::to_string(r.id) + " needs a Name");
+        for (char ch : r.iconFile)
+            if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.')) {
+                p.push_back("cb_rune: rune " + std::to_string(r.id) + ": IconFile may only contain letters, digits, _ - and .");
+                break;
+            }
     }
+    if (c.runes.size() > MaxIconImages) p.push_back("cb_rune: at most " + std::to_string(MaxIconImages) + " runes are supported");
     for (const auto& s : c.sets) {
         if (s.id < 1 || s.id > 999999) p.push_back("cb_set: ID " + std::to_string(s.id) + " must be between 1 and 999999");
         if (!setIds.insert(s.id).second) p.push_back("cb_set: ID " + std::to_string(s.id) + " is used twice");

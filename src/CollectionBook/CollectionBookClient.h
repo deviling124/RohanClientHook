@@ -18,6 +18,8 @@ struct SetView {
     unsigned owned = 0;                 // bit n = slot n registered
     std::string name;
     unsigned items[CollectionWire::SlotsPerSet]{};
+    unsigned needItem[5]{};             // runes (local mode): the items handed in to unlock it, with their amounts
+    int needAmount[5]{};
     std::vector<std::string> effect;    // filled by an `info` reply
     bool effectLoaded = false;
     std::vector<std::string> upgrade;   // the Upgrade tab text (fx index 1)

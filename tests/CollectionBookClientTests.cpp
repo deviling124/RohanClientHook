@@ -192,8 +192,9 @@ int main() {
     // --- local mode: the catalog comes from the cb_*.bin files, the server only tells what the character owns --------------
     {
         CollectionBin::Catalog bin;
-        CollectionBin::Rune r1; r1.id = 1; r1.item = 2983726; r1.icon = 5001; r1.name = "Rune of Fire"; r1.itemName = "Fire Tablet";
-        CollectionBin::Rune r2; r2.id = 2; r2.item = 2983727; r2.name = "Rune of Ice"; r2.itemName = "Ice Tablet";
+        CollectionBin::Rune r1; r1.id = 1; r1.icon = 5001; r1.name = "Rune of Fire"; r1.itemName = "Fire Tablet";
+        r1.needs[0] = {2983726, 1, "Fire Tablet"}; r1.needs[1] = {777, 30, "Rune Dust"};
+        CollectionBin::Rune r2; r2.id = 2; r2.iconFile = "ice"; r2.name = "Rune of Ice"; r2.itemName = "Ice Tablet"; r2.needs[0] = {2983727, 1, "Ice Tablet"};
         bin.runes = {r1, r2};
         CollectionBin::Set set; set.id = 101; set.name = "Rune Set"; set.runes[0] = 1; set.runes[1] = 2; set.crones = 1500000;
         bin.sets = {set};
@@ -221,7 +222,7 @@ int main() {
         c.Receive(OwnRow(n, 0, own, 2));
         Check(!c.Busy() && c.CurrentPage().loaded && c.CurrentPage().sets.size() == 1, "the page is composed locally");
         const auto& v = c.CurrentPage().sets[0];
-        Check(v.name == "Rune Set" && v.owned == (3u | OwnBit) && v.items[0] == 5001 && v.items[1] == 2983727, "names, icons and owned mask");
+        Check(v.name == "Rune Set" && v.owned == (3u | OwnBit) && v.items[0] == 5001 && v.items[1] == (CollectionBin::IconImageFlag | (CollectionBin::IconImageBase + 1)), "names, item icons and .gtx picture ids");
         Check(v.effect.size() > 5 && v.effect[0] == "[Activation Cost]" && v.effect[1] == "1,500,000 Crones", "the effect text shows the activation cost");
         Check(v.effect[4] == "Rune of Fire (Rune ID: 1)", "the effect text lists the requirements");
         Check(v.effect[v.effect.size() - 2] == "1 Rune: VIT +5 (+1 per 2 Lv)" && v.effect.back() == "2 Runes: AGI +3", "the effect text lists the bonus rows");
@@ -230,8 +231,10 @@ int main() {
         Check(v.rewards.size() == 2 && v.rewards[0] == "[Claimed] Activation" && v.rewards[1] == "Potion x10", "the rewards text uses the claimed bits");
         c.RequestList(2, 0);
         Check(c.CurrentPage().category == 2 && c.CurrentPage().sets.size() == 2 && !c.Busy(), "another category needs no round trip");
-        Check(c.CurrentPage().sets[0].id == RuneBase + 1 && c.CurrentPage().sets[0].name == "Fire Tablet" && c.CurrentPage().sets[0].owned == 1u, "runes are listed by their item name");
-        Check(c.CurrentPage().sets[0].effect[0] == "[Requirement]" && c.CurrentPage().sets[0].effect.back() == "Unlocked Rune of Fire (Rune ID: 1)", "rune text");
+        Check(c.CurrentPage().sets[0].id == RuneBase + 1 && c.CurrentPage().sets[0].name == "Rune of Fire" && c.CurrentPage().sets[0].owned == 1u, "runes are listed by their own name");
+        Check(c.CurrentPage().sets[0].effect[0] == "[Requirement]" && c.CurrentPage().sets[0].effect.size() == 3 && c.CurrentPage().sets[0].effect[1] == "Fire Tablet x 1" && c.CurrentPage().sets[0].effect[2] == "Rune Dust x 30", "rune requirement text lists every item");
+        Check(c.CurrentPage().sets[0].needItem[0] == 2983726 && c.CurrentPage().sets[0].needAmount[0] == 1 && c.CurrentPage().sets[0].needItem[1] == 777 &&
+              c.CurrentPage().sets[0].needAmount[1] == 30 && c.CurrentPage().sets[0].needItem[2] == 0, "a rune carries its requirement items for the boxes");
         c.RequestList(1, 0);
         c.RequestInfo(101);
         Check(!c.Busy(), "info is answered locally");

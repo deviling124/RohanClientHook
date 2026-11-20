@@ -20,6 +20,8 @@ public:
         unsigned category = 1;         // 1 rune sets, 2 runes
         std::string name;
         unsigned items[CollectionWire::SlotsPerSet]{};   // icon items (a rune is its own slot 0)
+        unsigned needItem[CollectionBin::RuneItems]{};   // runes: the items handed in to unlock it, and how many of each
+        int needAmount[CollectionBin::RuneItems]{};
     };
 
     // Reads the five files; false with `error` when one is unreadable or the references do not fit (CollectionBin::Validate).
@@ -34,13 +36,18 @@ public:
         for (const auto& s : bin_.sets) {
             Entry e;
             e.id = s.id; e.category = 1; e.name = s.name;
-            for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) if (s.runes[i]) e.items[i] = static_cast<unsigned>(IconOf(s.runes[i]));
+            for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) if (s.runes[i]) e.items[i] = IconOf(s.runes[i]);
             entries_.push_back(std::move(e));
         }
-        for (const auto& r : bin_.runes) {
+        for (std::size_t index = 0; index < bin_.runes.size(); ++index) {
+            const auto& r = bin_.runes[index];
             Entry e;
-            e.id = CollectionWire::RuneBase + r.id; e.category = 2; e.name = r.itemName.empty() ? r.name : r.itemName;
-            e.items[0] = static_cast<unsigned>(r.icon ? r.icon : r.item);
+            e.id = CollectionWire::RuneBase + r.id; e.category = 2; e.name = r.name.empty() ? r.itemName : r.name;
+            e.items[0] = IconValue(index);
+            for (int k = 0; k < CollectionBin::RuneItems; ++k) {
+                e.needItem[k] = r.needs[k].item > 0 ? static_cast<unsigned>(r.needs[k].item) : 0u;
+                e.needAmount[k] = r.needs[k].item > 0 ? r.needs[k].amount : 0;
+            }
             entries_.push_back(std::move(e));
         }
         loaded_ = true;
@@ -64,12 +71,16 @@ public:
         return out;
     }
 
-    // [Activation Cost] / [Requirements] / [Bonus Reward] of a set, or [Requirement] / [Reward] of a rune.
+    // [Activation Cost] / [Requirements] / [Bonus Reward] of a set, or just [Requirement] ("Item Name x Qty") of a rune.
     std::vector<std::string> Effect(int id) const {
         if (id >= CollectionWire::RuneBase) {
             const auto* r = FindRune(id - CollectionWire::RuneBase);
             if (!r) return {};
-            return Wrapped("[Requirement]\n" + std::to_string(r->item) + " : " + r->itemName + "\n\n[Reward]\nUnlocked " + r->name + " (Rune ID: " + std::to_string(r->id) + ")");
+            std::string text = "[Requirement]";   // one line per item handed in: "Item Name x Qty"
+            for (int i = 0; i < CollectionBin::RuneItems; ++i)
+                if (r->needs[i].item > 0)
+                    text += "\n" + (r->needs[i].name.empty() ? r->itemName : r->needs[i].name) + " x " + std::to_string(r->needs[i].amount);
+            return Wrapped(text);
         }
         const auto* set = FindSet(id);
         if (!set) return {};
@@ -186,9 +197,16 @@ private:
         for (const auto& s : bin_.sets) if (s.id == id) return &s;
         return nullptr;
     }
-    int IconOf(int runeId) const {
-        const auto* r = FindRune(runeId);
-        return r ? (r->icon ? r->icon : r->item) : 0;
+    // What a slot shows: the picture of the rune's .gtx (IconImageFlag | image id, see the cit lines tools\make_rune_icons.py writes)
+    // or else the icon of an item type.
+    unsigned IconValue(std::size_t index) const {
+        const auto& r = bin_.runes[index];
+        if (!r.iconFile.empty() && index < CollectionBin::MaxIconImages) return CollectionBin::IconImageFlag | (CollectionBin::IconImageBase + static_cast<unsigned>(index));
+        return static_cast<unsigned>(r.icon ? r.icon : r.needs[0].item);
+    }
+    unsigned IconOf(int runeId) const {
+        for (std::size_t i = 0; i < bin_.runes.size(); ++i) if (bin_.runes[i].id == runeId) return IconValue(i);
+        return 0;
     }
     bool AnyLevel(int id) const {
         for (const auto& l : bin_.levels) if (l.setId == id) return true;

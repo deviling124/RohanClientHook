@@ -82,6 +82,7 @@ void Client::RebuildPage() {
         SetView s;
         s.id = e.id; s.category = e.category; s.name = e.name;
         for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) s.items[i] = e.items[i];
+        for (unsigned i = 0; i < 5; ++i) { s.needItem[i] = e.needItem[i]; s.needAmount[i] = e.needAmount[i]; }
         const auto m = masks_.find(e.id);
         s.owned = m == masks_.end() ? 0 : m->second;
         const auto c = claimed_.find(e.id);
