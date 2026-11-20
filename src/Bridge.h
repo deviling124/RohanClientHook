@@ -9,5 +9,7 @@ LONG Attach();
 void Frame(AhkWindow& window,HWND gameWindow,EventShopWindow* shop=nullptr,DropBuffHud* hud=nullptr);
 void Pump();
 bool SessionMatches();
+// True once after the player typed the local `.cbook` command (the Collection Book window should open).
+bool TakeBookRequest();
 void Disconnect(AhkWindow& window,EventShopWindow* shop=nullptr,DropBuffHud* hud=nullptr);
 }

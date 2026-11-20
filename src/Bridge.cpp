@@ -3,6 +3,7 @@
 #include "CustomEvents/EventNotice.h"
 #include "EventShop/EventShopWindow.h"
 #include "DropBuff/DropBuffHud.h"
+#include "CollectionBook/CollectionBookClient.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
 #include <intrin.h>
@@ -26,6 +27,7 @@ std::mutex queueMutex;
 std::deque<std::string> incoming,outgoing;
 std::atomic<bool> openRequested{false};
 std::atomic<bool> shopRequested{false};
+std::atomic<bool> bookRequested{false};
 std::atomic<bool> sessionResetRequested{false};
 std::atomic<DWORD> gameThread{0};
 std::array<unsigned char,21> sayPrefix{};
@@ -96,6 +98,10 @@ bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
 }
+bool IsBookCommand(const char* text,short length) {
+    while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
+    return length==6 && _strnicmp(text,".cbook",6)==0;
+}
 // Remembers the connection and the 21-byte Say header so queued commands can be sent as Say later.
 void Learn(void* self,unsigned id,const unsigned char* prefix) {
     std::lock_guard<std::mutex> guard(queueMutex);
@@ -111,7 +117,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
     if(opcode==0x1f03) {
         char text[161]{};short length=0;unsigned char prefix[21]{};
         if(ReadSay(body,text,length,prefix)) {
-            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length);
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || IsBookCommand(text,length);
             void* current=nullptr;unsigned id=0;
             if(Current(current,id) && current==self && (command || learnFromChat.load())) {
                 // With the countdown active any ordinary Say teaches the header, so the background
@@ -119,6 +125,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
                 Learn(self,id,prefix);
                 if(command) {
                     if(IsShopCommand(text,length)) shopRequested=true;
+                    else if(IsBookCommand(text,length)) bookRequested=true;
                     else openRequested=true;
                     return 0; // Local command: do not broadcast .ahk into chat.
                 }
@@ -142,7 +149,8 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         char local[161]{};std::size_t length=0;
         if(ReadString(text,local,sizeof local,length)) {
             if(sender==character.load() && Bridge::SessionMatches() &&
-               (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)))) return;
+               (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) ||
+                IsBookCommand(local,static_cast<short>(length)))) return;
             void* current=nullptr;
             unsigned id=0;
             std::string_view message;
@@ -155,6 +163,7 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         if(ReadString(text,message,sizeof message,n) && ReadString(name,source,sizeof source,s) &&
            ((s==12 && std::memcmp(source,"[AdvancedHK]",12)==0 && n>=7 && std::memcmp(message,"AHKUI1 ",7)==0) ||
             (s==11 && std::memcmp(source,"[EventShop]",11)==0 && n>=5 && std::memcmp(message,"EPS1 ",5)==0) ||
+            (s==16 && std::memcmp(source,"[CollectionBook]",16)==0 && n>=5 && std::memcmp(message,"CBK1 ",5)==0) ||
             (s==DropBuffWire::Source.size() && std::memcmp(source,DropBuffWire::Source.data(),s)==0 &&
              n>=DropBuffWire::Prefix.size() && std::memcmp(message,DropBuffWire::Prefix.data(),DropBuffWire::Prefix.size())==0))) {
             std::lock_guard<std::mutex> guard(queueMutex);
@@ -176,6 +185,7 @@ bool SessionMatches() {
     void* current=nullptr;unsigned id=0;
     return prefixReady.load() && Current(current,id) && current==connection.load() && id==character.load();
 }
+bool TakeBookRequest() {return bookRequested.exchange(false);}
 void Pump() {
     if(GetCurrentThreadId()!=gameThread || !SessionMatches()) return;
     // One small ordered snapshot (10 messages max) on the original game thread.
@@ -185,7 +195,7 @@ void Pump() {
     for(const auto& command:commands) {
         if(!SessionMatches()) break;
         if(command.empty() || command.size()>160 ||
-           (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 &&
+           (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 && command.compare(0,6,".cbk1 ")!=0 &&
             command!=DropBuffWire::PollCommand)) continue;
         std::array<unsigned char,181> body{};
         std::memcpy(body.data(),prefix.data(),21);
@@ -202,6 +212,7 @@ void Pump() {
 void Disconnect(AhkWindow& window,EventShopWindow* shop,DropBuffHud* hud) {
     if(shop) shop->ResetSession();
     if(hud) hud->Reset();
+    CollectionBookClient::Shared().Reset();bookRequested=false;
     shopRequested=false;
     window.ResetSession();prefixReady=false;openRequested=false;sessionResetRequested=false;
     connection=nullptr;character=0;gameThread=0;
@@ -211,7 +222,7 @@ void Disconnect(AhkWindow& window,EventShopWindow* shop,DropBuffHud* hud) {
 void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
     gameHwnd=hwnd;
     if(hud) learnFromChat=true;
-    if(sessionResetRequested.exchange(false)) {window.ResetSession();if(shop) shop->ResetSession();if(hud) hud->Reset();}
+    if(sessionResetRequested.exchange(false)) {CollectionBookClient::Shared().Reset();window.ResetSession();if(shop) shop->ResetSession();if(hud) hud->Reset();}
     if(openRequested.exchange(false)) {if(shop) shop->Close();window.Open();}
     if(shopRequested.exchange(false) && shop) shop->Open();
     if((window.Visible() || (shop && shop->Visible()) || prefixReady.load()) && !SessionMatches()) Disconnect(window,shop,hud);
@@ -219,10 +230,16 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
     {std::lock_guard<std::mutex> guard(queueMutex);replies.swap(incoming);}
     for(const auto& reply:replies) {
         if(reply.compare(0,5,"EPS1 ")==0) {if(shop) shop->Receive(reply);}
+        else if(reply.compare(0,5,"CBK1 ")==0) CollectionBookClient::Shared().Receive(reply);
         else if(reply.compare(0,DropBuffWire::Prefix.size(),DropBuffWire::Prefix)==0) {if(hud) hud->Receive(reply);}
         else window.Receive(reply);
     }
     auto commands=window.TakeCommands();
+    if(SessionMatches()) {
+        auto& book=CollectionBookClient::Shared();
+        book.Tick(GetTickCount64());
+        for(auto& command:book.TakeCommands()) commands.push_back(std::move(command));
+    }
     if(shop) {
         auto extra=shop->TakeCommands();
         for(auto& command:extra) commands.push_back(std::move(command));
@@ -243,7 +260,7 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
 namespace Test {
 void Configure(void* current,unsigned id,unsigned a,unsigned b,NativeSend sender,NativeIngress receiver) {
     std::lock_guard<std::mutex> guard(queueMutex);
-    incoming.clear();outgoing.clear();openRequested=false;shopRequested=false;sessionResetRequested=false;gameThread=0;
+    incoming.clear();outgoing.clear();openRequested=false;shopRequested=false;bookRequested=false;sessionResetRequested=false;gameThread=0;
     prefixReady=false;learnFromChat=false;connection=nullptr;character=0;sayPrefix.fill(0);gameHwnd=nullptr;
     testConnection=current;testCharacter=id;testMetadataA=a;testMetadataB=b;
     sendOriginal=sender;ingressOriginal=receiver;

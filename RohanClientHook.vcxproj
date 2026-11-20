@@ -40,6 +40,8 @@
 <ClCompile Include="src\CustomEvents\EventNotice.cpp" />
 <ClCompile Include="src\Dx9Frame.cpp" />
 <ClCompile Include="src\Splash.cpp" />
+<ClCompile Include="src\UiTrace.cpp" />
+<ClCompile Include="src\CollectionBook\CollectionBookClient.cpp" />
 <ClCompile Include="src\Runtime.cpp" /></ItemGroup>
 <ItemGroup><ClInclude Include="src\AhkWindow.h" /><ClInclude Include="src\DropBuff\DropBuffHud.h" /><ClInclude Include="shared\DropBuffProtocol.h" /><ClInclude Include="shared\AhkProtocol.h" /><ClInclude Include="src\Bridge.h" /><ClInclude Include="src\Dx9Frame.h" /><ClInclude Include="src\Splash.h" /><ClInclude Include="src\CustomEvents\EventNotice.h" /><ClInclude Include="shared\EventNoticeProtocol.h" /></ItemGroup>
 <ItemGroup><ResourceCompile Include="src\Splash.rc" /></ItemGroup>
