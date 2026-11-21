@@ -948,7 +948,7 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
             } else {
                 RegisterHandler(self, nullptr, arg);
                 char info[100];
-                std::snprintf(info, sizeof info, "Demo mode: type .cbook first (Register clicked #%ld)",
+                std::snprintf(info, sizeof info, "Demo mode: no server session (Register clicked #%ld)",
                               static_cast<long>(registerClicks));
                 SetControlText(SelInfo, info);
             }
@@ -1244,11 +1244,7 @@ void SetInspectPage(int page) { inspectPage = page == 2 ? 2 : 1; }
 
 void Frame() {
     if (!prototypeEnabled) return;
-    static bool wasDown = false;
-    const bool down = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
-    if (down && !wasDown) OpenBook();
-    wasDown = down;
-    if (Bridge::TakeBookRequest()) OpenBook();   // the player typed .cbook
+    if (Bridge::TakeBookRequest()) OpenBook();   // the NPC dialog line
     if (prototypeBuilt) UpdateHover();
     Refresh();
 }
@@ -1276,7 +1272,7 @@ LONG Attach() {
         if (diagnostics) {
             CollectionBookClient::SetLogger([](const char* text) { ProtoLog(text); });
             char text[300];
-            std::snprintf(text, sizeof text, "book armed; press F9 or type .cbook in game; layout=%s", prototypePath);
+            std::snprintf(text, sizeof text, "book armed; talk to the Collection Book NPC; layout=%s", prototypePath);
             ProtoLog(text);
         }
     }

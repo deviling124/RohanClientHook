@@ -117,10 +117,6 @@ bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
 }
-bool IsBookCommand(const char* text,short length) {
-    while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
-    return length==6 && _strnicmp(text,".cbook",6)==0;
-}
 // Remembers the connection and the 21-byte Say header so queued commands can be sent as Say later.
 void Learn(void* self,unsigned id,const unsigned char* prefix) {
     std::lock_guard<std::mutex> guard(queueMutex);
@@ -138,7 +134,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
         if(ReadSay(body,text,length,prefix)) {
             std::string inspectName;
             const bool inspect=IsInspectCommand(text,length,inspectName);
-            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || IsBookCommand(text,length) || inspect;
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || inspect;
             void* current=nullptr;unsigned id=0;
             if(Current(current,id) && current==self && (command || learnFromChat.load())) {
                 // With the countdown active any ordinary Say teaches the header, so the background
@@ -152,7 +148,6 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
                         if(inspectName.empty()) inspectUsage=true;
                     }
                     else if(IsShopCommand(text,length)) shopRequested=true;
-                    else if(IsBookCommand(text,length)) bookRequested=true;
                     else openRequested=true;
                     return 0; // Local command: do not broadcast .ahk into chat.
                 }
@@ -177,7 +172,6 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         if(ReadString(text,local,sizeof local,length)) {
             if(sender==character.load() && Bridge::SessionMatches() &&
                (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) ||
-                IsBookCommand(local,static_cast<short>(length)) ||
                 [&]{std::string ignored;return IsInspectCommand(local,static_cast<short>(length),ignored);}())) return;
             void* current=nullptr;
             unsigned id=0;
@@ -215,7 +209,27 @@ bool SessionMatches() {
     return prefixReady.load() && Current(current,id) && current==connection.load() && id==character.load();
 }
 bool TakeBookRequest() {return bookRequested.exchange(false);}
-// Teaches the Say header the way the game builds it (see ChatSubmit 0x5ec4d4), in its own function (a __try cannot live next to the lock guard).
+// Builds the 21-byte Say header the way the game does (ChatSubmit 0x5ec4d4): character id, then two pure table lookups of the
+// chat type word at 0xd419f8 (0x4be240, 0x4be320), the length word and zeros. This lets the book talk to the server without the
+// player having typed anything first.
+void RequestBook() {
+    bookRequested=true;
+#ifndef AHK_BRIDGE_TESTING
+    void* current=nullptr;unsigned id=0;
+    if(prefixReady.load() || !Current(current,id)) return;
+    __try {
+        const unsigned word=*reinterpret_cast<const unsigned short*>(0xd419f8);
+        const unsigned a=reinterpret_cast<unsigned(__cdecl*)(unsigned)>(0x4be240)(word);
+        const unsigned b=reinterpret_cast<unsigned(__cdecl*)(unsigned)>(0x4be320)(a);
+        unsigned char prefix[21]{};
+        std::memcpy(prefix,&id,4);std::memcpy(prefix+4,&b,4);
+        const unsigned short low=static_cast<unsigned short>(a);
+        std::memcpy(prefix+12,&low,2);
+        Learn(current,id,prefix);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+#endif
+}
+// Same header building as RequestBook, in its own function (a __try cannot live next to the lock guard).
 void LearnHeaderNow() {
 #ifndef AHK_BRIDGE_TESTING
     void* current=nullptr;unsigned id=0;
