@@ -110,16 +110,21 @@ public:
         return Wrapped(text);
     }
 
-    // The refine section for a character at `level` with `unlocked` runes.
-    std::vector<std::string> Upgrade(int id, unsigned level, unsigned unlocked) const {
+    // The refine section for a character at `level` with `unlocked` runes and `pity` failed attempts in a row (each adds the level's failure
+    // bonus to the chance of the next attempt).
+    std::vector<std::string> Upgrade(int id, unsigned level, unsigned unlocked, unsigned pity = 0) const {
         if (id >= CollectionWire::RuneBase) return {"[Refine Level]", "Runes cannot be refined."};
         if (!AnyLevel(id)) return {"[Refine Level]", "This set has no refine levels."};
         std::vector<std::string> out{"[Refine Level]", "Current level: +" + std::to_string(level)};
         const CollectionBin::Level* next = FindLevel(id, static_cast<int>(level) + 1);
         if (!next) { out.push_back("Maximum level reached."); return out; }
         out.push_back("Next level: +" + std::to_string(next->level));
-        out.push_back("Success rate: " + std::to_string(next->rate / 1000) + "." + std::to_string((next->rate % 1000) / 100) + "%");
-        if (next->pity > 0) out.push_back("Each failure raises the next chance.");
+        const long long chance = (std::min)(100000LL, static_cast<long long>(next->rate) + static_cast<long long>(pity) * next->pity);
+        out.push_back("Success rate: " + Percent(chance));
+        if (next->pity > 0) {
+            out.push_back("Base " + Percent(next->rate) + ", +" + Percent(next->pity) + " per failure");
+            out.push_back("Failures in a row: " + std::to_string(pity));
+        }
         int gain[5]{};
         for (const auto& b : bin_.bonuses) {
             if (b.setId != id || b.perLevel == 0 || b.count > static_cast<int>(unlocked) || b.kind < 1 || b.kind > 4) continue;
@@ -174,6 +179,9 @@ public:
 private:
     static const char* KindName(int kind) {
         switch (kind) { case 1: return "VIT"; case 2: return "STR"; case 3: return "DEX"; case 4: return "AGI"; default: return "?"; }
+    }
+    static std::string Percent(long long value) {   // out of 100000
+        return std::to_string(value / 1000) + "." + std::to_string((value % 1000) / 100) + "%";
     }
     static std::string Grouped(long long value) {
         const std::string digits = std::to_string(value < 0 ? 0 : value);

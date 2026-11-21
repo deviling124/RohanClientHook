@@ -219,7 +219,7 @@ int main() {
         const auto n = NonceOf(cmds[0]);
         c.Receive(Wait(n));
         c.Receive(MineState(n, 2, 1));
-        OwnEntry own[2] = {{101, 3u | OwnBit, 2u}, {RuneBase + 1, 1u, 0u}};
+        OwnEntry own[2] = {{101, 3u | OwnBit, 2u, 3u}, {RuneBase + 1, 1u, 0u, 0u}};   // set 101 has failed three refines in a row
         c.Receive(OwnRow(n, 0, own, 2));
         Check(!c.Busy() && c.CurrentPage().loaded && c.CurrentPage().sets.size() == 1, "the page is composed locally");
         const auto& v = c.CurrentPage().sets[0];
@@ -227,7 +227,7 @@ int main() {
         Check(v.effect.size() > 5 && v.effect[0] == "[Activation Cost]" && v.effect[1] == "1,500,000 Crones", "the effect text shows the activation cost");
         Check(v.effect[4] == "Rune of Fire (Rune ID: 1)", "the effect text lists the requirements");
         Check(v.effect[v.effect.size() - 2] == "1 Rune: VIT +5 (+1 per 2 Lv)" && v.effect.back() == "2 Runes: AGI +3", "the effect text lists the bonus rows");
-        Check(v.upgrade.size() > 5 && v.upgrade[1] == "Current level: +0" && v.upgrade[3] == "Success rate: 50.0%", "the refine text comes from the level file");
+        Check(v.upgrade.size() > 5 && v.upgrade[1] == "Current level: +0" && v.upgrade[3] == "Success rate: 65.0%" && v.upgrade[4] == "Base 50.0%, +5.0% per failure" && v.upgrade[5] == "Failures in a row: 3", "the refine text shows the chance including the failure bonus");
         Check(v.upgrade.back() == "Rune Dust x3", "the refine text lists the materials");
         Check(v.rewards.size() == 2 && v.rewards[0] == "[Claimed] Activation" && v.rewards[1] == "Potion x10", "the rewards text uses the claimed bits");
         c.RequestList(2, 0);
@@ -245,6 +245,7 @@ int main() {
         cmds = c.TakeCommands();
         Check(cmds.size() == 1 && cmds[0].rfind(".cbk1 up ", 0) == 0, "upgrade still goes to the server");
         c.Receive(UpResult(NonceOf(cmds[0]), 0, 101, 3u | OwnBit | (1u << LevelShift)));
+        Check(c.TakeRefineEvent() == 1 && c.TakeRefineEvent() == 0, "a successful refine asks for the success sound once");
         Check(c.CurrentPage().sets[0].upgrade[1] == "Current level: +1" && c.CurrentPage().sets[0].upgrade[2] == "Maximum level reached.", "an upgrade answer updates the page");
         // equipping another set unequips the first one
         c.RequestEquip(101, true);

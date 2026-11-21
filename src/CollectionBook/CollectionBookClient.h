@@ -18,6 +18,7 @@ struct SetView {
     unsigned owned = 0;                 // bit n = slot n registered
     std::string name;
     unsigned items[CollectionWire::SlotsPerSet]{};
+    unsigned pity = 0;                  // sets (local mode): failed refine attempts in a row
     unsigned needItem[5]{};             // runes (local mode): the items handed in to unlock it, with their amounts
     int needAmount[5]{};
     std::vector<std::string> effect;    // filled by an `info` reply
@@ -108,6 +109,8 @@ public:
         rewardsReady_ = false;
         return true;
     }
+    // 1 after a refine succeeded, 2 after it failed (once): the window plays the game's success / fail sound.
+    int TakeRefineEvent() { const int e = refineEvent_; refineEvent_ = 0; return e; }
     SetView* FindSet(int id);
     const std::string& Status() const { return status_; }
     bool Busy() const { return inFlight_.active || !queue_.empty(); }
@@ -145,7 +148,8 @@ private:
     std::uint32_t nonce_ = 0;
     unsigned version_ = 0;
     LocalCatalog local_;
-    std::map<int, unsigned> masks_, claimed_, mineBuilding_, claimedBuilding_;
+    std::map<int, unsigned> masks_, claimed_, pity_, mineBuilding_, claimedBuilding_, pityBuilding_;
+    int refineEvent_ = 0;
     bool stateLoaded_ = false;
     unsigned wantCategory_ = 1, wantPage_ = 0, mineLines_ = 0, mineGot_ = 0;
     std::uint64_t stateAt_ = 0;

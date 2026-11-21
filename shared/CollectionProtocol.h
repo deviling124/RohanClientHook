@@ -22,14 +22,14 @@
 // Server -> client (0x1F04 with sender "[CollectionBook]"):
 //   CBK1 wait <nonce>
 //   CBK1 state <nonce> <category> <page> <pages> <countInCategory>   (a page is 5 sets; then `set` + `items` per set)
-//   CBK1 mine <nonce> <rows> <lines>                        (answer of `mine`; then `lines` x `CBK1 own <nonce> <index> <id> <mask> <claimedBits>` with up to 4 id/mask/claimed triples)
+//   CBK1 mine <nonce> <rows> <lines>                        (answer of `mine`; then `lines` x `CBK1 own <nonce> <index> <id> <mask> <claimedBits> <pity>` with up to 3 such groups; pity = failed refines in a row)
 //   CBK1 set <nonce> <index> <setId> <category> <ownedMask> <hex name>
 //   CBK1 items <nonce> <index> <item0> .. <item5>
 //   CBK1 fx <nonce> <index> <line> <lines> <hex text>      (index 0 = effect text, 1 = upgrade text, 2 = rewards text; `lines` = lines of that text)
 //   CBK1 reg <nonce> <result> <setId> <slot> <ownedMask>      result 0 = registered, 1..6 see sql/CollectionBook.sql
 //   CBK1 eq <nonce> <result> <setId> <active> <ownedMask>     (also the answer to `act`) result 0 = done, 1 unknown set, 2 no rune unlocked (act) / set not owned (eq), 3 already in that state, 5 not enough Crones
 //   (ownedMask: bits 0-5 runes unlocked, bit 6 = equipped, bit 7 = activated/owned, bits 8-11 = upgrade level)
-//   CBK1 up <nonce> <result> <setId> <ownedMask>      result 0 = upgraded, 1 the roll failed, 2 no upgrades, 3 max level, 4 not activated,
+//   CBK1 up <nonce> <result> <setId> <ownedMask> <pity>      result 0 = upgraded, 1 the roll failed, 2 no upgrades, 3 max level, 4 not activated,
 //                                                             5 not enough Crones, 7 missing materials
 //   (ownedMask bits 8-11 = the set's upgrade level 0..15)
 //   CBK1 claim <nonce> <result> <setId> <tier> <claimedBits>   result 0 = granted (to the Event Inventory), 1 unknown set, 2 not activated,
@@ -184,18 +184,19 @@ inline std::string FxRow(std::uint32_t nonce, unsigned index, unsigned line, uns
 inline std::string MineState(std::uint32_t nonce, unsigned rows, unsigned lines) {
     return "CBK1 mine " + N(nonce) + " " + N(rows) + " " + N(lines);
 }
-struct OwnEntry { int id = 0; unsigned mask = 0, claimed = 0; };
-inline constexpr unsigned OwnPerLine = 4;
+struct OwnEntry { int id = 0; unsigned mask = 0, claimed = 0, pity = 0; };   // pity = failed refine attempts in a row of that set
+inline constexpr unsigned OwnPerLine = 3;
 inline std::string OwnRow(std::uint32_t nonce, unsigned index, const OwnEntry* entries, unsigned count) {
     std::string out = "CBK1 own " + N(nonce) + " " + N(index);
-    for (unsigned i = 0; i < count; ++i) out += " " + std::to_string(entries[i].id) + " " + N(entries[i].mask) + " " + N(entries[i].claimed);
+    for (unsigned i = 0; i < count; ++i)
+        out += " " + std::to_string(entries[i].id) + " " + N(entries[i].mask) + " " + N(entries[i].claimed) + " " + N(entries[i].pity);
     return out;
 }
 inline std::string EquipResult(std::uint32_t nonce, int result, int set, unsigned active, unsigned owned) {
     return "CBK1 eq " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + N(active) + " " + N(owned);
 }
-inline std::string UpResult(std::uint32_t nonce, int result, int set, unsigned owned) {
-    return "CBK1 up " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + N(owned);
+inline std::string UpResult(std::uint32_t nonce, int result, int set, unsigned owned, unsigned pity = 0) {
+    return "CBK1 up " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + N(owned) + " " + N(pity);
 }
 inline std::string ClaimResult(std::uint32_t nonce, int result, int set, int tier, unsigned bits) {
     return "CBK1 claim " + N(nonce) + " " + std::to_string(result) + " " + std::to_string(set) + " " + std::to_string(tier) + " " + N(bits);

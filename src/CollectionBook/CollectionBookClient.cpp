@@ -64,7 +64,8 @@ void Client::Reset() {
     batch_ = {};
     status_.clear();
     lastFinish_ = 0;
-    masks_.clear(); claimed_.clear(); mineBuilding_.clear(); claimedBuilding_.clear();
+    masks_.clear(); claimed_.clear(); pity_.clear(); mineBuilding_.clear(); claimedBuilding_.clear(); pityBuilding_.clear();
+    refineEvent_ = 0;
     stateLoaded_ = false;
     mineLines_ = mineGot_ = 0;
     Touch();
@@ -90,7 +91,9 @@ void Client::RebuildPage() {
         unsigned unlocked = 0;
         for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) unlocked += (s.owned >> i) & 1u;
         s.effect = local_.Effect(e.id); s.effectLoaded = true;
-        s.upgrade = local_.Upgrade(e.id, Level(s), unlocked); s.upgradeLoaded = true;
+        const auto p = pity_.find(e.id);
+        s.pity = p == pity_.end() ? 0 : p->second;
+        s.upgrade = local_.Upgrade(e.id, Level(s), unlocked, s.pity); s.upgradeLoaded = true;
         s.rewards = local_.Rewards(e.id, s.owned, claimed); s.rewardsLoaded = true;
         built.sets.push_back(std::move(s));
     }
@@ -322,26 +325,27 @@ void Client::Receive(const std::string& line) {
     }
     if (kind == "mine" && inFlight_.req.kind == Kind::State && w.size() == 5) {
         unsigned rows = 0, lines = 0;
-        if (!CollectionWire::Number(w[3], rows) || !CollectionWire::Number(w[4], lines) || lines > 4096 || rows > 4 * lines) return;
-        mineBuilding_.clear(); claimedBuilding_.clear();
+        if (!CollectionWire::Number(w[3], rows) || !CollectionWire::Number(w[4], lines) || lines > 4096 || rows > CollectionWire::OwnPerLine * lines) return;
+        mineBuilding_.clear(); claimedBuilding_.clear(); pityBuilding_.clear();
         mineLines_ = lines; mineGot_ = 0;
-        if (!lines) { masks_.clear(); claimed_.clear(); stateLoaded_ = true; stateAt_ = now_; SetStatus(""); RebuildPage(); Finish(now_); }
+        if (!lines) { masks_.clear(); claimed_.clear(); pity_.clear(); stateLoaded_ = true; stateAt_ = now_; SetStatus(""); RebuildPage(); Finish(now_); }
         return;
     }
-    if (kind == "own" && inFlight_.req.kind == Kind::State && w.size() >= 7 && (w.size() - 4) % 3 == 0 && mineLines_) {
+    if (kind == "own" && inFlight_.req.kind == Kind::State && w.size() >= 8 && (w.size() - 4) % 4 == 0 && mineLines_) {
         unsigned index = 0;
         if (!CollectionWire::Number(w[3], index) || index != mineGot_) return;
-        for (std::size_t at = 4; at + 2 < w.size(); at += 3) {
+        for (std::size_t at = 4; at + 3 < w.size(); at += 4) {
             int id = 0;
-            unsigned mask = 0, claimed = 0;
+            unsigned mask = 0, claimed = 0, pity = 0;
             if (!CollectionWire::Number(w[at], id) || !CollectionWire::Number(w[at + 1], mask) || !CollectionWire::Number(w[at + 2], claimed) ||
-                mask >= CollectionWire::MaskLimit || claimed > 255) return;
+                !CollectionWire::Number(w[at + 3], pity) || mask >= CollectionWire::MaskLimit || claimed > 255) return;
             mineBuilding_[id] = mask;
             claimedBuilding_[id] = claimed;
+            pityBuilding_[id] = pity;
         }
         if (++mineGot_ >= mineLines_) {
-            masks_ = std::move(mineBuilding_); claimed_ = std::move(claimedBuilding_);
-            mineBuilding_.clear(); claimedBuilding_.clear();
+            masks_ = std::move(mineBuilding_); claimed_ = std::move(claimedBuilding_); pity_ = std::move(pityBuilding_);
+            mineBuilding_.clear(); claimedBuilding_.clear(); pityBuilding_.clear();
             stateLoaded_ = true; stateAt_ = now_; mineLines_ = 0;
             SetStatus("");
             RebuildPage();
@@ -495,11 +499,13 @@ void Client::Receive(const std::string& line) {
         if (result == 0) RequestInfo(set);
         return;
     }
-    if (kind == "up" && inFlight_.req.kind == Kind::Upgrade && w.size() == 6) {
+    if (kind == "up" && inFlight_.req.kind == Kind::Upgrade && w.size() == 7) {
         int result = 0, set = 0;
-        unsigned mask = 0;
+        unsigned mask = 0, pity = 0;
         if (!CollectionWire::Number(w[3], result) || !CollectionWire::Number(w[4], set) || !CollectionWire::Number(w[5], mask) ||
-            set != inFlight_.req.set || mask >= CollectionWire::MaskLimit) return;
+            !CollectionWire::Number(w[6], pity) || set != inFlight_.req.set || mask >= CollectionWire::MaskLimit) return;
+        if (result <= 1) refineEvent_ = result == 0 ? 1 : 2;   // the window plays the game's success / fail sound
+        if (result <= 1) pity_[set] = pity;
         if (result <= 1 && local_.Loaded()) SetMask(set, mask);
         else if (SetView* s = FindSet(set)) {
             if (result <= 1) { s->owned = mask; s->upgradeLoaded = false; Touch(); }

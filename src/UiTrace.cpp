@@ -1077,6 +1077,21 @@ using WindowShowFn = void(__thiscall*)(void*, int, int);
 WindowShowFn originalWindowShow = reinterpret_cast<WindowShowFn>(0x0058C600);   // stock show/hide of a window: thiscall(window manager, id, show)
 void ProtoLog(const char* text);
 
+// Plays one of the game's own sounds by file name (the sound manager 0x00D3B088, play-by-name 0x009FAE10; the name travels as the
+// client's std::string, built with its own assign 0x00402630 and freed with 0x00B8D5ED like the stock code does).
+void PlayGameSound(const char* name) {
+    alignas(8) unsigned char text[0x1C];
+    std::memset(text, 0, sizeof text);
+    *reinterpret_cast<unsigned*>(text + 0x18) = 0xF;
+    __try {
+        const auto sounds = *reinterpret_cast<void**>(0x00D3B088);
+        if (!sounds) return;
+        reinterpret_cast<void(__thiscall*)(void*, const char*, unsigned)>(0x00402630)(text, name, static_cast<unsigned>(std::strlen(name)));
+        reinterpret_cast<int(__thiscall*)(void*, void*, int, int)>(0x009FAE10)(sounds, text, 0, 0);
+        if (*reinterpret_cast<unsigned*>(text + 0x18) >= 0x10) reinterpret_cast<void(__cdecl*)(void*)>(0x00B8D5ED)(*reinterpret_cast<void**>(text + 4));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 // The game's item tooltip for an item type, the way the stock code shows one for an item it only knows by type (the shop list at
 // 0x004C8086): a template record (type in the first dword) is turned into a temporary item object with 0x008A6060 and handed to
 // 0x008BE040, which opens the tooltip window (id 0x57) at the cursor; the object is destroyed afterwards (0x008A5EE0).
@@ -1170,6 +1185,7 @@ void Refresh() {
     auto& client = CollectionBookClient::Shared();
     std::vector<CollectionBookClient::Reward> rewards;
     if (client.TakeRewards(rewards)) OpenResults(rewards);
+    if (const int refine = client.TakeRefineEvent()) PlayGameSound(refine == 1 ? "suces.wav" : "fail.wav");   // the game's own refine result sounds
     // The first `.cbook` of a session opens the book and then the bridge resets the client data (it just learned the session): show
     // the catalog again at once instead of leaving the window empty until it is reopened.
     if (client.Local() && activeMode <= 2 && !client.CurrentPage().loaded && Bridge::SessionMatches() && WindowAlive() &&
