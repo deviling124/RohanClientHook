@@ -7,15 +7,14 @@
 //  - The player menu window class (vtable 0xC33EEC, constructor 0x55EFD0, window id 0xC1) keeps the clicked player's 8 byte object id at
 //    window+0xE8 and its buttons in a vector at window+0xD4.
 //  - Its click handler (vtable slot +0x0C, 0x55F0E0) finds the clicked button's position `di` in that vector and at 0x55F18B switches on it:
-//    `movzx eax,di / cmp eax,9 / ja 0x55F646 / jmp [eax*4+0x55F670]`; 0x55F646 closes the menu. Position 1 is the second button of the layout
-//    (control id 2, "1:1 chat"), which the stock layout keeps switched off.
+//    `movzx eax,di / cmp eax,9 / ja 0x55F646 / jmp [eax*4+0x55F670]`; 0x55F646 closes the menu. Position 0 is the first line of the layout
+//    (control id 1, "Use Shop"), which the layout made by tools/make_playermenu_layout.py in the server repo relabels "Inspect".
 //  - 0x50B330 (thiscall, manager 0xD44A34, const id*) returns the player object of an id; word [object+6] == 3 is a player.
 //    0x477DE0 (thiscall, local player 0xD3FFC0, (object, 1)) returns the character name as a C string.
 namespace {
 constexpr DWORD kSwitchSite = 0x55F18B;
 constexpr DWORD kMenuClose = 0x55F646;
 constexpr UINT_PTR kManager = 0xD44A34, kLocalPlayer = 0xD3FFC0;
-constexpr unsigned kInspectPosition = 1;
 PVOID switchTrampoline = reinterpret_cast<PVOID>(kSwitchSite);
 
 bool SiteMatches() {
@@ -46,7 +45,7 @@ void __cdecl OnInspectClick(void* window) {
 
 __declspec(naked) void SwitchStub() {
     __asm {
-        cmp di, 1                // kInspectPosition
+        test di, di              // position 0: the first line ("Inspect")
         jne original
         pushad
         push ebp                 // the menu window
