@@ -252,6 +252,7 @@ constexpr unsigned PrototypeId = 0x300;
 bool prototypeEnabled = false;
 bool diagnostics = false;           // uitrace.on exists: tracing and logging are active
 bool prototypeBuilt = false;
+bool inspectLayout = false;        // the inspect layout file is installed in the client folder: the icon resolver is needed for it too
 // Layout used by the prototype: the first line of uitrace_proto.on names a .ui file in bitmaps\interface4\ui
 // (default: the stock mail-delete popup).
 char prototypePath[260] = "\\Bitmaps\\Interface4\\UI\\post_pop_postdelete.ui";
@@ -313,6 +314,9 @@ volatile LONG resultsOpen = 0;
 constexpr int OverlayBit = 8;
 int ActiveBits() { return (1 << (activeMode - 1)) | (resultsOpen ? OverlayBit : 0); }
 constexpr int AliasFlag = 0x100000;
+// Inspect window pages: an image id | InspectAlias | page mask << 16 resolves only while that page is shown (1 Battle, 2 Costume).
+constexpr int InspectAlias = 0x200000;
+volatile LONG inspectPage = 1;
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
 constexpr int FirstItemBoxKey = 22;   // hover keys from here on are the item boxes of the Collection tab (glow textures); below: buttons
@@ -361,6 +365,12 @@ bool LookupItemHandle(unsigned type, std::uint32_t out[2]) {
 }
 
 void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, int id) {
+    if (id & InspectAlias) {
+        const int mask = (id >> 16) & 15;
+        if (mask & (1 << (inspectPage - 1))) DetourImageResolve(self, edx, out, id & 0xFFFF);
+        else out[0] = out[1] = 0xFFFFFFFFu;
+        return;
+    }
     if (id & AliasFlag) {
         const int mask = (id >> 16) & 15;
         if (mask & ActiveBits()) DetourImageResolve(self, edx, out, id & 0xFFFF);
@@ -945,7 +955,7 @@ unsigned char __fastcall DetourWindowDispatch(void* self, void*, int key, int ki
 // the tooltip hidden again before it was ever visible for long, which is the blinking. The book window's private vtable therefore replaces
 // its draw slot: original draw first, then the tooltip of the item box under the cursor (UpdateHover decides which item: tooltipItem).
 volatile LONG tooltipItem = 0;
-bool ShowItemTooltip(unsigned itemType, int& step);
+bool ShowItemTooltip(unsigned itemType, int& step, const unsigned char* raw = nullptr);
 using WindowDrawFn = void(__thiscall*)(void*);
 WindowDrawFn originalDraw = nullptr;
 void __fastcall DetourWindowDraw(void* self, void*) {
@@ -1101,7 +1111,7 @@ void PlayGameSound(const char* name) {
 // does for its one-off tooltips, left the window pointing at stack garbage and made it blink).
 alignas(16) unsigned char heldObject[0x400];
 bool heldBuilt = false;
-bool ShowItemTooltip(unsigned itemType, int& step) {
+bool ShowItemTooltip(unsigned itemType, int& step, const unsigned char* raw) {
     alignas(16) unsigned char record[0x44];
     unsigned char* const object = heldObject;
     step = 0;
@@ -1116,6 +1126,7 @@ bool ShowItemTooltip(unsigned itemType, int& step) {
         std::memset(record, 0, sizeof record);
         std::memset(object, 0, sizeof heldObject);
         *reinterpret_cast<unsigned*>(record) = itemType;
+        if (raw) std::memcpy(record, raw, 61);   // the item's real native record (enhancements, options): the tooltip then shows its effects
         reinterpret_cast<void*(__thiscall*)(void*, const void*, void*)>(0x008A6060)(object, record, definition);
         heldBuilt = true;
         step = 3;
@@ -1209,6 +1220,19 @@ void Refresh() {
 }
 }
 
+// Item icon slots 36..47 belong to the inspect window (tools/make_inspect_layout.py in the server repo, image ids 0x7024..0x702F).
+void SetIconItem(int slot, unsigned itemType) {
+    if (slot >= 36 && slot < IconIdCount) iconItem[slot] = itemType;
+}
+bool InspectLayoutInstalled() { return inspectLayout; }
+// The game's own item tooltip for an item type (the Collection Book's mechanism), for other windows. Call it every frame while hovering, from
+// the window's draw (the tooltip window is shown at the cursor); HideTooltip() closes it.
+bool ShowTooltipFor(unsigned itemType) { int step = 0; return ShowItemTooltip(itemType, step); }
+// The same, built from the item's native 61-byte record (shared/InspectProtocol.h `rec`); the first dword is the item type.
+bool ShowTooltipRecord(const unsigned char* record61) { int step = 0; unsigned type = 0; std::memcpy(&type, record61, 4); return ShowItemTooltip(type, step, record61); }
+void HideTooltip() { HideItemTooltip(); }
+void SetInspectPage(int page) { inspectPage = page == 2 ? 2 : 1; }
+
 void Frame() {
     if (!prototypeEnabled) return;
     static bool wasDown = false;
@@ -1235,7 +1259,8 @@ LONG Attach() {
     diagnostics = GetFileAttributesW(L"uitrace.on") != INVALID_FILE_ATTRIBUTES;
     const bool legacy = GetFileAttributesW(L"uitrace_proto.on") != INVALID_FILE_ATTRIBUTES;
     prototypeEnabled = legacy || BookEnabledByConfig();
-    if (!diagnostics && !prototypeEnabled) return NO_ERROR;
+    inspectLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\inspect_character.ui") != INVALID_FILE_ATTRIBUTES;
+    if (!diagnostics && !prototypeEnabled && !inspectLayout) return NO_ERROR;
     if (prototypeEnabled) {
         if (legacy) ReadPrototypeName();
         else std::snprintf(prototypePath, sizeof prototypePath, "\\Bitmaps\\Interface4\\UI\\collection_book.ui");
@@ -1275,7 +1300,7 @@ LONG Attach() {
     }
     if (result == NO_ERROR && prototypeEnabled && DispatchMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalDispatch), reinterpret_cast<PVOID>(DetourDispatch));
-    if (result == NO_ERROR && prototypeEnabled && ResolveMatches())
+    if (result == NO_ERROR && (prototypeEnabled || inspectLayout) && ResolveMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalResolve), reinterpret_cast<PVOID>(DetourImageResolve));
     if (result == NO_ERROR && diagnostics && logFile != INVALID_HANDLE_VALUE) {
         HANDLE thread = CreateThread(nullptr, 0, WindowDumpThread, nullptr, 0, nullptr);

@@ -25,6 +25,8 @@
 #include "PriceInput.h"
 #include "ClientGuard/ClientGuard.h"
 #include "UiTrace.h"
+#include "StatusTrace.h"
+#include "Inspect/InspectWindow.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 namespace {
@@ -244,6 +246,8 @@ struct FloatEnvironment {
 };
 HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,const RECT* destination,
                                    HWND overrideWindow,const RGNDATA* dirtyRegion) {
+    InspectWindow::Frame(); // the inspect window (`.inspect <name>`)
+    StatusTrace::Frame(); // F10 capture for the Character Information trace (statustrace.on only)
     UiTrace::Frame(); // the Collection Book window (opened by .cbook or F9); tracing only with uitrace.on
     {
     FloatEnvironment floatingPoint;
@@ -372,6 +376,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     if(result==NO_ERROR) result=PriceInput::Attach();
     if(result==NO_ERROR) result=ClientGuard::Attach();
     if(result==NO_ERROR) result=UiTrace::Attach();
+    if(result==NO_ERROR) result=StatusTrace::Attach();
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalCreate9),reinterpret_cast<PVOID>(Create9));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalInputCreate),reinterpret_cast<PVOID>(CreateInput));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalAsync),reinterpret_cast<PVOID>(AsyncKey));

@@ -4,6 +4,7 @@
 #include "EventShop/EventShopWindow.h"
 #include "DropBuff/DropBuffHud.h"
 #include "CollectionBook/CollectionBookClient.h"
+#include "Inspect/InspectClient.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
 #include <intrin.h>
@@ -28,6 +29,9 @@ std::deque<std::string> incoming,outgoing;
 std::atomic<bool> openRequested{false};
 std::atomic<bool> shopRequested{false};
 std::atomic<bool> bookRequested{false};
+std::string pendingInspect;          // name typed after `.inspect`, guarded by queueMutex
+std::atomic<bool> inspectUsage{false}; // `.inspect` without a name
+bool pendingInspectSlots=false;       // `.inspect <name> slots`, guarded by queueMutex
 std::atomic<bool> sessionResetRequested{false};
 std::atomic<DWORD> gameThread{0};
 std::array<unsigned char,21> sayPrefix{};
@@ -94,6 +98,21 @@ bool IsOpenCommand(const char* text,short length) {
     return length==4 && text[0]=='.' && (text[1]=='a'||text[1]=='A') &&
         (text[2]=='h'||text[2]=='H') && (text[3]=='k'||text[3]=='K');
 }
+// `.inspect <name>`: a local command (never sent as chat). `name` is the first word after it; empty when none was given.
+bool IsInspectCommand(const char* text,short length,std::string& name) {
+    while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
+    if(length<8 || _strnicmp(text,".inspect",8)!=0 || (length>8 && text[8]!=' ')) return false;
+    name.clear();
+    short i=8;
+    while(i<length && text[i]==' ') ++i;
+    while(i<length && text[i]!=' ') name+=text[i++];
+    return true;
+}
+// `.inspect <name> slots` also lists the equipment slots that hold something (to find where an item type sits).
+bool InspectWantsSlots(const char* text,short length) {
+    while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
+    return length>=6 && _strnicmp(text+length-6," slots",6)==0;
+}
 bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
@@ -117,14 +136,22 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
     if(opcode==0x1f03) {
         char text[161]{};short length=0;unsigned char prefix[21]{};
         if(ReadSay(body,text,length,prefix)) {
-            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || IsBookCommand(text,length);
+            std::string inspectName;
+            const bool inspect=IsInspectCommand(text,length,inspectName);
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || IsBookCommand(text,length) || inspect;
             void* current=nullptr;unsigned id=0;
             if(Current(current,id) && current==self && (command || learnFromChat.load())) {
                 // With the countdown active any ordinary Say teaches the header, so the background
                 // poll needs no typed command. Without it only the explicit commands do.
                 Learn(self,id,prefix);
                 if(command) {
-                    if(IsShopCommand(text,length)) shopRequested=true;
+                    if(inspect) {
+                        std::lock_guard<std::mutex> guard(queueMutex);
+                        pendingInspect=inspectName;
+                        pendingInspectSlots=InspectWantsSlots(text,length);
+                        if(inspectName.empty()) inspectUsage=true;
+                    }
+                    else if(IsShopCommand(text,length)) shopRequested=true;
                     else if(IsBookCommand(text,length)) bookRequested=true;
                     else openRequested=true;
                     return 0; // Local command: do not broadcast .ahk into chat.
@@ -150,7 +177,8 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         if(ReadString(text,local,sizeof local,length)) {
             if(sender==character.load() && Bridge::SessionMatches() &&
                (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) ||
-                IsBookCommand(local,static_cast<short>(length)))) return;
+                IsBookCommand(local,static_cast<short>(length)) ||
+                [&]{std::string ignored;return IsInspectCommand(local,static_cast<short>(length),ignored);}())) return;
             void* current=nullptr;
             unsigned id=0;
             std::string_view message;
@@ -164,6 +192,7 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
            ((s==12 && std::memcmp(source,"[AdvancedHK]",12)==0 && n>=7 && std::memcmp(message,"AHKUI1 ",7)==0) ||
             (s==11 && std::memcmp(source,"[EventShop]",11)==0 && n>=5 && std::memcmp(message,"EPS1 ",5)==0) ||
             (s==16 && std::memcmp(source,"[CollectionBook]",16)==0 && n>=5 && std::memcmp(message,"CBK1 ",5)==0) ||
+            (s==9 && std::memcmp(source,"[Inspect]",9)==0 && n>=5 && std::memcmp(message,"INS1 ",5)==0) ||
             (s==DropBuffWire::Source.size() && std::memcmp(source,DropBuffWire::Source.data(),s)==0 &&
              n>=DropBuffWire::Prefix.size() && std::memcmp(message,DropBuffWire::Prefix.data(),DropBuffWire::Prefix.size())==0))) {
             std::lock_guard<std::mutex> guard(queueMutex);
@@ -196,7 +225,7 @@ void Pump() {
         if(!SessionMatches()) break;
         if(command.empty() || command.size()>160 ||
            (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 && command.compare(0,6,".cbk1 ")!=0 &&
-            command!=DropBuffWire::PollCommand)) continue;
+            command.compare(0,6,".ins1 ")!=0 && command!=DropBuffWire::PollCommand)) continue;
         std::array<unsigned char,181> body{};
         std::memcpy(body.data(),prefix.data(),21);
         const short length=static_cast<short>(command.size());
@@ -212,7 +241,7 @@ void Pump() {
 void Disconnect(AhkWindow& window,EventShopWindow* shop,DropBuffHud* hud) {
     if(shop) shop->ResetSession();
     if(hud) hud->Reset();
-    CollectionBookClient::Shared().Reset();bookRequested=false;
+    CollectionBookClient::Shared().Reset();bookRequested=false;InspectClient::Shared().Reset();
     shopRequested=false;
     window.ResetSession();prefixReady=false;openRequested=false;sessionResetRequested=false;
     connection=nullptr;character=0;gameThread=0;
@@ -231,11 +260,22 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
     for(const auto& reply:replies) {
         if(reply.compare(0,5,"EPS1 ")==0) {if(shop) shop->Receive(reply);}
         else if(reply.compare(0,5,"CBK1 ")==0) CollectionBookClient::Shared().Receive(reply);
+        else if(reply.compare(0,5,"INS1 ")==0) InspectClient::Shared().Receive(reply);
         else if(reply.compare(0,DropBuffWire::Prefix.size(),DropBuffWire::Prefix)==0) {if(hud) hud->Receive(reply);}
         else window.Receive(reply);
     }
     auto commands=window.TakeCommands();
     if(SessionMatches()) {
+        // Inspect: start the request typed as `.inspect <name>`, report a refused one, move on the timeout.
+        std::string pending;
+        bool wantSlots=false;
+        {std::lock_guard<std::mutex> guard(queueMutex);pending.swap(pendingInspect);wantSlots=pendingInspectSlots;pendingInspectSlots=false;}
+        auto& inspect=InspectClient::Shared();
+        if(inspectUsage.exchange(false)) EventNotice::ShowLocal("[Inspect] Usage: .inspect <player name>");
+        else if(!pending.empty() && (inspect.SetDebug(wantSlots),!inspect.Request(pending,GetTickCount64())))
+            EventNotice::ShowLocal((std::string("[Inspect] ")+InspectClient::ErrorText(inspect.rejected())).c_str());
+        inspect.Tick(GetTickCount64());
+        for(auto& command:inspect.TakeCommands()) commands.push_back(std::move(command));
         auto& book=CollectionBookClient::Shared();
         book.Tick(GetTickCount64());
         for(auto& command:book.TakeCommands()) commands.push_back(std::move(command));

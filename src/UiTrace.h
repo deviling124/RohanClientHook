@@ -10,4 +10,13 @@ LONG Attach();
 // Called once per rendered frame on the render thread (only does anything when uitrace.on exists). F9 builds a
 // prototype native window (id 0x300) from the stock generic popup class and shows it; see docs/COLLECTION_BOOK_RE.md.
 void Frame();
+// Sets the item type shown by icon slot 36..47 (inspect window). 0 clears the slot. Only works when the icon resolver is attached,
+// which InspectLayoutInstalled() reports (the layout file inspect_character.ui exists in the client folder).
+void SetIconItem(int slot, unsigned itemType);
+bool InspectLayoutInstalled();
+// The inspect window page whose images are drawn: 1 Battle, 2 Costume.
+void SetInspectPage(int page);
+bool ShowTooltipFor(unsigned itemType);
+bool ShowTooltipRecord(const unsigned char* record61);
+void HideTooltip();
 }
