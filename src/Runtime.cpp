@@ -27,6 +27,7 @@
 #include "UiTrace.h"
 #include "StatusTrace.h"
 #include "Inspect/InspectWindow.h"
+#include "Inspect/PlayerMenu.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 namespace {
@@ -377,6 +378,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     if(result==NO_ERROR) result=ClientGuard::Attach();
     if(result==NO_ERROR) result=UiTrace::Attach();
     if(result==NO_ERROR) result=StatusTrace::Attach();
+    if(result==NO_ERROR) result=PlayerMenu::Attach();
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalCreate9),reinterpret_cast<PVOID>(Create9));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalInputCreate),reinterpret_cast<PVOID>(CreateInput));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalAsync),reinterpret_cast<PVOID>(AsyncKey));

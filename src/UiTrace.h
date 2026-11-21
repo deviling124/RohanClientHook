@@ -16,6 +16,7 @@ void SetIconItem(int slot, unsigned itemType);
 bool InspectLayoutInstalled();
 // The inspect window page whose images are drawn: 1 Battle, 2 Costume.
 void SetInspectPage(int page);
+void SetInspectHover(int box);   // item box of the inspect window under the cursor, -1 for none (glow)
 bool ShowTooltipFor(unsigned itemType);
 bool ShowTooltipRecord(const unsigned char* record61);
 void HideTooltip();

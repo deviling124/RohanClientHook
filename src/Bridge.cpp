@@ -215,6 +215,28 @@ bool SessionMatches() {
     return prefixReady.load() && Current(current,id) && current==connection.load() && id==character.load();
 }
 bool TakeBookRequest() {return bookRequested.exchange(false);}
+// Teaches the Say header the way the game builds it (see ChatSubmit 0x5ec4d4), in its own function (a __try cannot live next to the lock guard).
+void LearnHeaderNow() {
+#ifndef AHK_BRIDGE_TESTING
+    void* current=nullptr;unsigned id=0;
+    if(prefixReady.load() || !Current(current,id)) return;
+    __try {
+        const unsigned word=*reinterpret_cast<const unsigned short*>(0xd419f8);
+        const unsigned a=reinterpret_cast<unsigned(__cdecl*)(unsigned)>(0x4be240)(word);
+        const unsigned b=reinterpret_cast<unsigned(__cdecl*)(unsigned)>(0x4be320)(a);
+        unsigned char prefix[21]{};
+        std::memcpy(prefix,&id,4);std::memcpy(prefix+4,&b,4);
+        const unsigned short low=static_cast<unsigned short>(a);
+        std::memcpy(prefix+12,&low,2);
+        Learn(current,id,prefix);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+#endif
+}
+void RequestInspect(const char* name) {
+    if(!name || !*name) return;
+    {std::lock_guard<std::mutex> guard(queueMutex);pendingInspect=name;pendingInspectSlots=false;}
+    LearnHeaderNow();
+}
 void Pump() {
     if(GetCurrentThreadId()!=gameThread || !SessionMatches()) return;
     // One small ordered snapshot (10 messages max) on the original game thread.

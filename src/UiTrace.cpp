@@ -317,6 +317,7 @@ constexpr int AliasFlag = 0x100000;
 // Inspect window pages: an image id | InspectAlias | page mask << 16 resolves only while that page is shown (1 Battle, 2 Costume).
 constexpr int InspectAlias = 0x200000;
 volatile LONG inspectPage = 1;
+volatile LONG inspectHover = -1;   // the inspect window item box under the cursor (index on the shown page)
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
 constexpr int FirstItemBoxKey = 22;   // hover keys from here on are the item boxes of the Collection tab (glow textures); below: buttons
@@ -374,6 +375,13 @@ void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, in
     if (id & AliasFlag) {
         const int mask = (id >> 16) & 15;
         if (mask & ActiveBits()) DetourImageResolve(self, edx, out, id & 0xFFFF);
+        else out[0] = out[1] = 0xFFFFFFFFu;
+        return;
+    }
+    if (id >= 0x7090 && id < 0x70B0) {   // inspect window item box glow: 0x7090 + box (fill), 0x70A0 + box (border)
+        const bool fill = id < 0x70A0;
+        const int box = id - (fill ? 0x7090 : 0x70A0);
+        if (fill && box == inspectHover) originalResolve(self, out, 2106);   // the stock slot buttons' own hover picture
         else out[0] = out[1] = 0xFFFFFFFFu;
         return;
     }
@@ -1231,6 +1239,7 @@ bool ShowTooltipFor(unsigned itemType) { int step = 0; return ShowItemTooltip(it
 // The same, built from the item's native 61-byte record (shared/InspectProtocol.h `rec`); the first dword is the item type.
 bool ShowTooltipRecord(const unsigned char* record61) { int step = 0; unsigned type = 0; std::memcpy(&type, record61, 4); return ShowItemTooltip(type, step, record61); }
 void HideTooltip() { HideItemTooltip(); }
+void SetInspectHover(int box) { inspectHover = box; }
 void SetInspectPage(int page) { inspectPage = page == 2 ? 2 : 1; }
 
 void Frame() {

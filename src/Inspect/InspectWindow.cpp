@@ -136,7 +136,7 @@ bool Alive();
 // Which item box is under the cursor: sets tooltipItem, and closes the tooltip a moment after the cursor left (the hover test can drop out
 // for a few frames while the tooltip window opens).
 void UpdateHover() {
-    LONG item = 0, slotHit = -1;
+    LONG item = 0, slotHit = -1, boxHit = -1;
     __try {
         HWND foreground = GetForegroundWindow();
         DWORD pid = 0;
@@ -149,6 +149,7 @@ void UpdateHover() {
             for (int i = 0; i < count; ++i) {
                 const Box& box = page == 1 ? BattleBox[i] : CostumeBox[i];
                 if (mx < box.x || mx >= box.x + BoxSize || my < box.y || my >= box.y + BoxSize) continue;
+                boxHit = i;
                 slotHit = static_cast<LONG>(page == 1 ? BattleSlot[i] : CostumeSlot[i]);
                 item = static_cast<LONG>(shown.eq[slotHit]);
                 break;
@@ -157,6 +158,7 @@ void UpdateHover() {
     } __except (EXCEPTION_EXECUTE_HANDLER) { item = 0; }
     static ULONGLONG lostSince = 0;
     const ULONGLONG now = GetTickCount64();
+    UiTrace::SetInspectHover(item ? boxHit : -1);   // empty boxes do not glow
     if (item) {
         lostSince = 0;
         if (item != tooltipItem || slotHit != tooltipSlot) { InterlockedExchange(&tooltipSlot, slotHit); InterlockedExchange(&tooltipItem, item); }
