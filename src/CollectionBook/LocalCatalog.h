@@ -72,7 +72,8 @@ public:
     }
 
     // [Activation Cost] / [Requirements] / [Bonus Reward] of a set, or just [Requirement] ("Item Name x Qty") of a rune.
-    std::vector<std::string> Effect(int id) const {
+    // `mask` = the character's owned mask of the entry: the unlocked runes and the refine level give the "Current Bonus" line of a set.
+    std::vector<std::string> Effect(int id, unsigned mask = 0) const {
         if (id >= CollectionWire::RuneBase) {
             const auto* r = FindRune(id - CollectionWire::RuneBase);
             if (!r) return {};
@@ -88,7 +89,7 @@ public:
         for (int i = 0; i < 6; ++i) {
             if (!set->runes[i]) continue;
             const auto* r = FindRune(set->runes[i]);
-            text += "\n" + (r ? r->name : std::string("?")) + " (Rune ID: " + std::to_string(set->runes[i]) + ")";
+            text += "\n" + (r ? r->name : std::string("?"));
         }
         text += "\n\n[Bonus Reward]\n";
         std::string bonus;
@@ -106,6 +107,21 @@ public:
             bonus += std::to_string(pieces) + (pieces == 1 ? " Rune: " : " Runes: ") + line;
         }
         text += bonus.empty() ? "(none)" : bonus;
+        // What the set gives now, with the server's formula: every bonus row of at most the unlocked runes adds Value + (Level / LevelDivisor) * PerLevel.
+        unsigned unlocked = 0;
+        for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) unlocked += (set->runes[i] && (mask & (1u << i))) ? 1 : 0;
+        const int level = static_cast<int>((mask >> CollectionWire::LevelShift) & CollectionWire::MaxLevel);
+        int total[5]{};
+        for (const auto& b : bin_.bonuses)
+            if (b.setId == id && b.kind >= 1 && b.kind <= 4 && b.count <= static_cast<int>(unlocked))
+                total[b.kind] += b.value + (level / (b.divisor < 1 ? 1 : b.divisor)) * b.perLevel;
+        std::string current;
+        for (int kind = 1; kind <= 4; ++kind) {
+            if (!total[kind]) continue;
+            if (!current.empty()) current += ", ";
+            current += std::string(KindName(kind)) + (total[kind] > 0 ? " +" : " ") + std::to_string(total[kind]);
+        }
+        text += "\nCurrent Bonus: " + (current.empty() ? std::string("none") : current);
         if (text.size() > 1000) text.resize(1000);
         return Wrapped(text);
     }

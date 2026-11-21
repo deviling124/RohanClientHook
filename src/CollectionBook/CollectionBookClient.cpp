@@ -90,7 +90,7 @@ void Client::RebuildPage() {
         const unsigned claimed = c == claimed_.end() ? 0 : c->second;
         unsigned unlocked = 0;
         for (unsigned i = 0; i < CollectionWire::SlotsPerSet; ++i) unlocked += (s.owned >> i) & 1u;
-        s.effect = local_.Effect(e.id); s.effectLoaded = true;
+        s.effect = local_.Effect(e.id, s.owned); s.effectLoaded = true;
         const auto p = pity_.find(e.id);
         s.pity = p == pity_.end() ? 0 : p->second;
         s.upgrade = local_.Upgrade(e.id, Level(s), unlocked, s.pity); s.upgradeLoaded = true;

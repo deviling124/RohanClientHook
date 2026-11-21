@@ -225,8 +225,9 @@ int main() {
         const auto& v = c.CurrentPage().sets[0];
         Check(v.name == "Rune Set" && v.owned == (3u | OwnBit) && v.items[0] == 5001 && v.items[1] == (CollectionBin::IconImageFlag | (CollectionBin::IconImageBase + 1)), "names, item icons and .gtx picture ids");
         Check(v.effect.size() > 5 && v.effect[0] == "[Activation Cost]" && v.effect[1] == "1,500,000 Crones", "the effect text shows the activation cost");
-        Check(v.effect[4] == "Rune of Fire (Rune ID: 1)", "the effect text lists the requirements");
-        Check(v.effect[v.effect.size() - 2] == "1 Rune: VIT +5 (+1 per 2 Lv)" && v.effect.back() == "2 Runes: AGI +3", "the effect text lists the bonus rows");
+        Check(v.effect[4] == "Rune of Fire" && v.effect[5] == "Rune of Ice", "the effect text lists the requirements without rune ids");
+        Check(v.effect[v.effect.size() - 3] == "1 Rune: VIT +5 (+1 per 2 Lv)" && v.effect[v.effect.size() - 2] == "2 Runes: AGI +3", "the effect text lists the bonus rows");
+        Check(v.effect.back() == "Current Bonus: VIT +5, AGI +3", "the effect text ends with the bonus the set gives now (two runes unlocked, level 0)");
         Check(v.upgrade.size() > 5 && v.upgrade[1] == "Current level: +0" && v.upgrade[3] == "Success rate: 65.0%" && v.upgrade[4] == "Base 50.0%, +5.0% per failure" && v.upgrade[5] == "Failures in a row: 3", "the refine text shows the chance including the failure bonus");
         Check(v.upgrade.back() == "Rune Dust x3", "the refine text lists the materials");
         Check(v.rewards.size() == 2 && v.rewards[0] == "[Claimed] Activation" && v.rewards[1] == "Potion x10", "the rewards text uses the claimed bits");
