@@ -32,7 +32,7 @@ std::atomic<bool> shopRequested{false};
 std::atomic<bool> bookRequested{false};
 std::string pendingInspect;          // name typed after `.inspect`, guarded by queueMutex
 std::atomic<bool> inspectUsage{false}; // `.inspect` without a name
-std::atomic<bool> bossRequested{false}; // `.bosscheck`: open the Boss Check window
+std::atomic<bool> bossRequested{false}; // the Boss Check window was requested (the minimap skull button or the World Map toolbar button)
 bool pendingInspectSlots=false;       // `.inspect <name> slots`, guarded by queueMutex
 std::atomic<bool> sessionResetRequested{false};
 std::atomic<DWORD> gameThread{0};
@@ -115,11 +115,6 @@ bool InspectWantsSlots(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length>=6 && _strnicmp(text+length-6," slots",6)==0;
 }
-// `.bosscheck`: a local command (never sent as chat) that opens the Boss Check window.
-bool IsBossCommand(const char* text,short length) {
-    while(length && (text[length-1]==' ' || text[length-1]==0)) --length;
-    return length==10 && _strnicmp(text,".bosscheck",10)==0;
-}
 bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
@@ -141,8 +136,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
         if(ReadSay(body,text,length,prefix)) {
             std::string inspectName;
             const bool inspect=IsInspectCommand(text,length,inspectName);
-            const bool boss=IsBossCommand(text,length);
-            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || inspect || boss;
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || inspect;
             void* current=nullptr;unsigned id=0;
             if(Current(current,id) && current==self && (command || learnFromChat.load())) {
                 // With the countdown active any ordinary Say teaches the header, so the background
@@ -155,7 +149,6 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
                         pendingInspectSlots=InspectWantsSlots(text,length);
                         if(inspectName.empty()) inspectUsage=true;
                     }
-                    else if(boss) bossRequested=true;
                     else if(IsShopCommand(text,length)) shopRequested=true;
                     else openRequested=true;
                     return 0; // Local command: do not broadcast .ahk into chat.
@@ -180,7 +173,7 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         char local[161]{};std::size_t length=0;
         if(ReadString(text,local,sizeof local,length)) {
             if(sender==character.load() && Bridge::SessionMatches() &&
-               (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) || IsBossCommand(local,static_cast<short>(length)) ||
+               (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) ||
                 [&]{std::string ignored;return IsInspectCommand(local,static_cast<short>(length),ignored);}())) return;
             void* current=nullptr;
             unsigned id=0;

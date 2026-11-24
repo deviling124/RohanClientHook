@@ -15,7 +15,7 @@ bool TakeBookRequest();
 void RequestBook();
 // `.inspect <name>` as a click (the player menu): starts the request and teaches the Say header if the player has not chatted yet.
 void RequestInspect(const char* name);
-// True once after `.bosscheck` was typed (opens the Boss Check window).
+// True once after the Boss Check window was requested (a click on the minimap skull button or the World Map toolbar button).
 bool TakeBossRequest();
 // Opens the Boss Check window as a click (the minimap button) and teaches the Say header if needed.
 void OpenBossCheck();
