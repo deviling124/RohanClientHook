@@ -15,5 +15,11 @@ bool TakeBookRequest();
 void RequestBook();
 // `.inspect <name>` as a click (the player menu): starts the request and teaches the Say header if the player has not chatted yet.
 void RequestInspect(const char* name);
+// True once after `.bosscheck` was typed (opens the Boss Check window).
+bool TakeBossRequest();
+// Opens the Boss Check window as a click (the minimap button) and teaches the Say header if needed.
+void OpenBossCheck();
+// Teaches the Say header if the player has not chatted yet, so a queued command (a click in the Boss Check window) can be sent.
+void LearnSayHeader();
 void Disconnect(AhkWindow& window,EventShopWindow* shop=nullptr,DropBuffHud* hud=nullptr);
 }
