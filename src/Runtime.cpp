@@ -29,7 +29,6 @@
 #include "Inspect/InspectWindow.h"
 #include "BossCheck/BossCheckWindow.h"
 #include "BossCheck/MinimapButton.h"
-#include "BossCheck/WorldMapButton.h"
 #include "Inspect/PlayerMenu.h"
 #include "CollectionBook/NpcMenu.h"
 #include "ItemTooltip/CombatStatLines.h"
@@ -255,7 +254,6 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
     InspectWindow::Frame(); // the inspect window (`.inspect <name>`)
     BossCheckWindow::Frame(); // the Boss Check window
     MinimapButton::Frame(); // the Boss Check button on the minimap
-    WorldMapButton::Frame(); // the Boss Check button in the World Map (M) window
     StatusTrace::Frame(); // F10 capture for the Character Information trace (statustrace.on only)
     UiTrace::Frame(); // the Collection Book window (opened from the NPC dialog line); tracing only with uitrace.on
     {

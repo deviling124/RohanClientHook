@@ -44,7 +44,6 @@
 <ClCompile Include="src\StatusTrace.cpp" />
 <ClCompile Include="src\BossCheck\BossCheckWindow.cpp" />
 <ClCompile Include="src\BossCheck\MinimapButton.cpp" />
-<ClCompile Include="src\BossCheck\WorldMapButton.cpp" />
 <ClCompile Include="src\Inspect\InspectWindow.cpp" />
 <ClCompile Include="src\Inspect\PlayerMenu.cpp" />
 <ClCompile Include="src\CollectionBook\CollectionBookClient.cpp" />

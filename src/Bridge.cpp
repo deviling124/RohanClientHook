@@ -32,7 +32,7 @@ std::atomic<bool> shopRequested{false};
 std::atomic<bool> bookRequested{false};
 std::string pendingInspect;          // name typed after `.inspect`, guarded by queueMutex
 std::atomic<bool> inspectUsage{false}; // `.inspect` without a name
-std::atomic<bool> bossRequested{false}; // the Boss Check window was requested (the minimap skull button or the World Map toolbar button)
+std::atomic<bool> bossRequested{false}; // the Boss Check window was requested (the minimap skull button)
 bool pendingInspectSlots=false;       // `.inspect <name> slots`, guarded by queueMutex
 std::atomic<bool> sessionResetRequested{false};
 std::atomic<DWORD> gameThread{0};
