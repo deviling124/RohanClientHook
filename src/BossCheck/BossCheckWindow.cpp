@@ -2,6 +2,7 @@
 #include "BossCheckClient.h"
 #include "../Bridge.h"
 #include "../CustomEvents/EventNotice.h"
+#include "../UiTrace.h"
 #include <windows.h>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +26,7 @@ using SetTextFn = void(__thiscall*)(void*, const char*);
 using DispatchFn = unsigned char(__thiscall*)(void*, int, int, int);
 
 // Dynamic text ids (DYN in tools/make_bosscheck_layout.py) and button keys (KEYS there).
-constexpr int PageText = 1001, NameBase = 1010, AliveBase = 1020, DeadBase = 1030;
+constexpr int PageText = 1001, NameBase = 1010;
 constexpr int KeyMoveFirst = 2, KeyFirst = 8, KeyPrev = 9, KeyNext = 10, KeyLast = 11;
 
 struct TextRef { int id; void* control; };
@@ -81,8 +82,7 @@ void Fill() {
     for (int slot = 0; slot < BossCheckClient::RowsPerPage; ++slot) {
         const auto* row = client.RowAt(slot);
         SetText(NameBase + slot, row ? row->name : std::string());
-        SetText(AliveBase + slot, row && row->alive ? "ALIVE" : "");
-        SetText(DeadBase + slot, row && !row->alive ? "DEAD" : "");
+        UiTrace::SetBossDot(slot, !row ? 0 : row->alive ? 1 : 2);
     }
     SetText(PageText, "Page " + std::to_string(client.page() + 1) + " / " + std::to_string(client.Pages()));
 }

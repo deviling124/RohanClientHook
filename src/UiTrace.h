@@ -17,6 +17,9 @@ bool InspectLayoutInstalled();
 // The inspect window page whose images are drawn: 1 Battle, 2 Costume.
 void SetInspectPage(int page);
 void SetInspectHover(int box);   // item box of the inspect window under the cursor, -1 for none (glow)
+// Status dot of Boss Check row 0..5: 0 none (empty row), 1 alive (green), 2 dead (red). Drawn only when the icon resolver is attached,
+// which it is when the layout file boss_check.ui exists in the client folder.
+void SetBossDot(int row, int state);
 bool ShowTooltipFor(unsigned itemType);
 bool ShowTooltipRecord(const unsigned char* record61);
 void HideTooltip();

@@ -318,6 +318,13 @@ constexpr int AliasFlag = 0x100000;
 constexpr int InspectAlias = 0x200000;
 volatile LONG inspectPage = 1;
 volatile LONG inspectHover = -1;   // the inspect window item box under the cursor (index on the shown page)
+// Boss Check status dots: 0x70C0 + row (DOT_BASE in tools/make_bosscheck_layout.py) resolves to the stock green or red dot picture
+// (data\interfacetexture.cit: 3963 vip_dungeonlist_greenpoint, 3964 vip_dungeonlist_redpoint), or to no image for an empty row.
+constexpr int BossDotIds = 0x70C0;
+constexpr int BossDotRows = 6;
+constexpr int BossDotAliveImage = 3963;
+constexpr int BossDotDeadImage = 3964;
+volatile LONG bossDot[BossDotRows]{};
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
 constexpr int FirstItemBoxKey = 22;   // hover keys from here on are the item boxes of the Collection tab (glow textures); below: buttons
@@ -382,6 +389,12 @@ void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, in
         const bool fill = id < 0x70A0;
         const int box = id - (fill ? 0x7090 : 0x70A0);
         if (fill && box == inspectHover) originalResolve(self, out, 2106);   // the stock slot buttons' own hover picture
+        else out[0] = out[1] = 0xFFFFFFFFu;
+        return;
+    }
+    if (id >= BossDotIds && id < BossDotIds + BossDotRows) {
+        const LONG state = bossDot[id - BossDotIds];
+        if (state == 1 || state == 2) originalResolve(self, out, state == 1 ? BossDotAliveImage : BossDotDeadImage);
         else out[0] = out[1] = 0xFFFFFFFFu;
         return;
     }
@@ -1240,6 +1253,9 @@ bool ShowTooltipFor(unsigned itemType) { int step = 0; return ShowItemTooltip(it
 bool ShowTooltipRecord(const unsigned char* record61) { int step = 0; unsigned type = 0; std::memcpy(&type, record61, 4); return ShowItemTooltip(type, step, record61); }
 void HideTooltip() { HideItemTooltip(); }
 void SetInspectHover(int box) { inspectHover = box; }
+void SetBossDot(int row, int state) {
+    if (row >= 0 && row < BossDotRows) bossDot[row] = state;
+}
 void SetInspectPage(int page) { inspectPage = page == 2 ? 2 : 1; }
 
 void Frame() {
@@ -1265,7 +1281,8 @@ LONG Attach() {
     const bool legacy = GetFileAttributesW(L"uitrace_proto.on") != INVALID_FILE_ATTRIBUTES;
     prototypeEnabled = legacy || BookEnabledByConfig();
     inspectLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\inspect_character.ui") != INVALID_FILE_ATTRIBUTES;
-    if (!diagnostics && !prototypeEnabled && !inspectLayout) return NO_ERROR;
+    const bool bossLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\boss_check.ui") != INVALID_FILE_ATTRIBUTES;   // its status dots
+    if (!diagnostics && !prototypeEnabled && !inspectLayout && !bossLayout) return NO_ERROR;
     if (prototypeEnabled) {
         if (legacy) ReadPrototypeName();
         else std::snprintf(prototypePath, sizeof prototypePath, "\\Bitmaps\\Interface4\\UI\\collection_book.ui");
@@ -1305,7 +1322,7 @@ LONG Attach() {
     }
     if (result == NO_ERROR && prototypeEnabled && DispatchMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalDispatch), reinterpret_cast<PVOID>(DetourDispatch));
-    if (result == NO_ERROR && (prototypeEnabled || inspectLayout) && ResolveMatches())
+    if (result == NO_ERROR && (prototypeEnabled || inspectLayout || bossLayout) && ResolveMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalResolve), reinterpret_cast<PVOID>(DetourImageResolve));
     if (result == NO_ERROR && diagnostics && logFile != INVALID_HANDLE_VALUE) {
         HANDLE thread = CreateThread(nullptr, 0, WindowDumpThread, nullptr, 0, nullptr);
