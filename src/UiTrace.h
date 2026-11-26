@@ -24,5 +24,8 @@ void SetInspectHover(int box);   // item box of the inspect window under the cur
 void SetBossDot(int row, int state);
 bool ShowTooltipFor(unsigned itemType);
 bool ShowTooltipRecord(const unsigned char* record61);
+// The tooltip of an item object the client already holds (a bag item), as the inventory shows it. The tooltip window keeps the
+// pointer: call HideTooltip() before the item can go away.
+bool ShowTooltipObject(void* itemObject);
 void HideTooltip();
 }

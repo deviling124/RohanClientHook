@@ -35,6 +35,7 @@
 #include "CostumeEffect/CostumeClient.h"
 #include "CostumeEffect/CostumeWindow.h"
 #include "CostumeEffect/CostumePreview.h"
+#include "CostumeEffect/CostumeGuard.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 namespace {
@@ -396,6 +397,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     if(result==NO_ERROR) result=NpcMenu::Attach();
     if(result==NO_ERROR) result=CombatStatLines::Attach();
     if(result==NO_ERROR) result=CostumePreview::Attach();
+    if(result==NO_ERROR) result=CostumeGuard::Attach();
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalCreate9),reinterpret_cast<PVOID>(Create9));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalInputCreate),reinterpret_cast<PVOID>(CreateInput));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalAsync),reinterpret_cast<PVOID>(AsyncKey));

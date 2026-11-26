@@ -1261,6 +1261,14 @@ void SetCostumeIcon(unsigned itemType) { InterlockedExchange(&costumeIcon, stati
 bool ShowTooltipFor(unsigned itemType) { int step = 0; return ShowItemTooltip(itemType, step); }
 // The same, built from the item's native 61-byte record (shared/InspectProtocol.h `rec`); the first dword is the item type.
 bool ShowTooltipRecord(const unsigned char* record61) { int step = 0; unsigned type = 0; std::memcpy(&type, record61, 4); return ShowItemTooltip(type, step, record61); }
+bool ShowTooltipObject(void* itemObject) {
+    __try {
+        const auto items = *reinterpret_cast<void**>(0x00D3B07C);
+        if (!items || !itemObject) return false;
+        reinterpret_cast<void(__thiscall*)(void*, void*, int, int, int, int, int, int)>(0x008BE040)(items, itemObject, 0, 0, 0, 0, -1, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 void HideTooltip() { HideItemTooltip(); }
 void SetInspectHover(int box) { inspectHover = box; }
 void SetBossDot(int row, int state) {
@@ -1333,7 +1341,7 @@ LONG Attach() {
     }
     if (result == NO_ERROR && prototypeEnabled && DispatchMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalDispatch), reinterpret_cast<PVOID>(DetourDispatch));
-    if (result == NO_ERROR && (prototypeEnabled || inspectLayout || bossLayout) && ResolveMatches())
+    if (result == NO_ERROR && (prototypeEnabled || inspectLayout || bossLayout || costumeLayout) && ResolveMatches())
         result = DetourAttach(reinterpret_cast<PVOID*>(&originalResolve), reinterpret_cast<PVOID>(DetourImageResolve));
     if (result == NO_ERROR && diagnostics && logFile != INVALID_HANDLE_VALUE) {
         HANDLE thread = CreateThread(nullptr, 0, WindowDumpThread, nullptr, 0, nullptr);

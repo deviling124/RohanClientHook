@@ -154,6 +154,56 @@ void Fill() {
 
 void Fill();
 
+// The tooltip of the item in the slot. As in the inventory, the window's own draw shows it again every frame the mouse is there.
+constexpr int SlotX = 145, SlotY = 83, SlotSize = 32, SlotMargin = 4;   // the inner slot in make_costume_effect_layout.py
+using DrawFn = void(__fastcall*)(void*, void*);
+DrawFn originalDraw = nullptr;
+bool tooltipShown = false;
+ULONGLONG tooltipLostSince = 0;
+
+bool MouseOnSlot(const void* self) {
+    __try {
+        const auto mouse = *reinterpret_cast<const unsigned char**>(0x00D44A44);
+        if (!mouse) return false;
+        const auto bytes = static_cast<const unsigned char*>(self);
+        const int x = *reinterpret_cast<const int*>(mouse + 0x14) - *reinterpret_cast<const int*>(bytes + 0x3C) - SlotX;
+        const int y = *reinterpret_cast<const int*>(mouse + 0x18) - *reinterpret_cast<const int*>(bytes + 0x40) - SlotY;
+        return x >= -SlotMargin && y >= -SlotMargin && x < SlotSize + SlotMargin && y < SlotSize + SlotMargin;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+void HideSlotTooltip() {
+    tooltipLostSince = 0;
+    if (!tooltipShown) return;
+    tooltipShown = false;
+    UiTrace::HideTooltip();
+}
+
+// The bag item in the slot, when its tooltip may be shown. Not while combining: the server is about to take the item.
+void* TooltipItem() {
+    const auto view = CostumeClient::Shared().Snapshot();
+    if (view.combining || !view.placed.itemId) return nullptr;
+    return CostumePreview::ItemObject({view.placed.itemId, view.placed.type, view.placed.bag, view.placed.slot});
+}
+
+void __fastcall Draw(void* self, void* edx) {
+    originalDraw(self, edx);
+    if (self != window) return;
+    void* item = TooltipItem();
+    if (!item) {                       // emptied, used up or moved: the tooltip must not keep pointing at it
+        HideSlotTooltip();
+        return;
+    }
+    if (MouseOnSlot(self)) {
+        tooltipLostSince = 0;
+        tooltipShown = UiTrace::ShowTooltipObject(item) || tooltipShown;
+    } else if (tooltipShown) {         // the test can drop out for a few frames while the tooltip window opens
+        const ULONGLONG now = GetTickCount64();
+        if (!tooltipLostSince) tooltipLostSince = now;
+        if (now - tooltipLostSince > 150) HideSlotTooltip();
+    }
+}
+
 bool DragSupported() {
     __try {
         constexpr unsigned char held[] = {0x83,0xB9,0x9C,0x00,0x00,0x00,0x01,0x74,0x03,0x33,0xC0,0xC3,0x8B,0x81,0xA0};
@@ -209,7 +259,7 @@ unsigned char __fastcall Dispatch(void* self, void*, int key, int kind, int arg)
         if (key == KeyApply) client.Combine(GetTickCount64());
         else if (key == KeyPrev) client.StepEffect(-1);
         else if (key == KeyNext) client.StepEffect(1);
-        else client.Remove();
+        else { HideSlotTooltip(); client.Remove(); }
         Fill();
         return 1;
     }
@@ -238,6 +288,8 @@ bool Create() {
         std::memcpy(&vtableStorage[1], stock, 48 * sizeof(unsigned));
         originalDispatch = reinterpret_cast<DispatchFn>(stock[45]);
         vtableStorage[1 + 45] = reinterpret_cast<unsigned>(&Dispatch);
+        originalDraw = reinterpret_cast<DrawFn>(stock[18]);       // the draw method (vtable slot 18, +0x48)
+        vtableStorage[1 + 18] = reinterpret_cast<unsigned>(&Draw);
         if (stock[3] == StockRelease && DragSupported()) {
             originalRelease = reinterpret_cast<ReleaseFn>(stock[3]);
             vtableStorage[1 + 3] = reinterpret_cast<unsigned>(&Release);
@@ -276,7 +328,7 @@ bool Visible() {
 
 void Frame() {
     auto& client = CostumeClient::Shared();
-    if (!client.Visible()) { open = false; return; }
+    if (!client.Visible()) { HideSlotTooltip(); open = false; return; }
     if (!LayoutInstalled()) {
         client.Close();
         EventNotice::ShowLocal("[Costume] The window file costume_effect.ui is not installed.");
@@ -301,9 +353,11 @@ void Frame() {
     seenVisible = seenVisible || visible;
     if (!visible && (seenVisible || now - openedAt > 2000)) {
         client.Close();
+        HideSlotTooltip();
         open = false;
         return;
     }
+    if (!visible || !TooltipItem()) HideSlotTooltip();
     if (visible) Fill();
 }
 

@@ -75,7 +75,10 @@ void ClientMark(void* character, const Worn& wanted, bool inUse) {
         if (unsigned char* item = BagItem(character, wanted)) item[0xB6] = inUse ? 1 : 0;
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
-Game game{nullptr, nullptr, ClientLocal, ClientApplied, ClientWear, ClientTakeOff, ClientMark};
+void* ClientItemObject(void* character, const Worn& wanted) {
+    __try { return BagItem(character, wanted); } __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+}
+Game game{nullptr, nullptr, ClientLocal, ClientApplied, ClientWear, ClientTakeOff, ClientMark, ClientItemObject};
 bool ready = false;
 
 void* subject = nullptr;     // the character wearing the preview
@@ -160,6 +163,12 @@ void Hold(const Worn& item) {
         holder = local;
         held = item;
     }
+}
+
+void* ItemObject(const Worn& item) {
+    if (!ready || !item.itemId) return nullptr;
+    void* local = game.localPlayer();
+    return local ? game.itemObject(local, item) : nullptr;
 }
 
 bool Active() { return subject != nullptr; }

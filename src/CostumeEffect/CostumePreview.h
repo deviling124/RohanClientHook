@@ -23,6 +23,8 @@ void Update(const Worn& item, unsigned effectType);
 // Marks the bag item in the slot as in use, the way the item recycle window does: its icon is darkened and it cannot be used
 // or moved. Pass an empty item to give it back. Safe to call every frame.
 void Hold(const Worn& item);
+// The local player's bag item object, if it is still where it was; null otherwise. Do not keep the pointer.
+void* ItemObject(const Worn& item);
 // True while another aura than the game's own is on the player.
 bool Active();
 
@@ -34,6 +36,7 @@ struct Game {
     bool (*wear)(void* character, const Worn& item);   // false: the item is no longer there, nothing changed
     void (*takeOff)(void* character, const Worn& item);   // takes `item` off and shows what is really equipped again
     void (*mark)(void* character, const Worn& item, bool inUse);
+    void* (*itemObject)(void* character, const Worn& item);
 };
 #ifdef COSTUME_PREVIEW_TESTING
 void TestSetup(const Game& game);

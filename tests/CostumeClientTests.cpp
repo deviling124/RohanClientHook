@@ -1,6 +1,7 @@
 // What the Costume Effect window may send, and what the preview does to the player's aura, against fake client functions.
 #include "../src/CostumeEffect/CostumeClient.h"
 #include "../src/CostumeEffect/CostumePreview.h"
+#include "../src/CostumeEffect/CostumeGuard.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -218,6 +219,8 @@ bool FakeWear(void* c, const CostumePreview::Worn& item) {
 void FakeMark(void*, const CostumePreview::Worn& item, bool inUse) {
     calls.push_back((inUse ? "lock " : "unlock ") + std::to_string(item.itemId));
 }
+int bagObject = 0;
+void* FakeItemObject(void*, const CostumePreview::Worn& item) { return item.itemId == 215 ? &bagObject : nullptr; }
 void FakeTakeOff(void* c, const CostumePreview::Worn& item) {
     calls.push_back("takeoff " + std::to_string(item.itemId));
     static_cast<Character*>(c)->applied = equippedAura;
@@ -235,7 +238,7 @@ void Expect(const char* what, const std::vector<std::string>& expected) {
 
 void Preview() {
     using namespace CostumePreview;
-    const Game fake{FakeAttach, FakeRemove, FakeLocal, FakeApplied, FakeWear, FakeTakeOff, FakeMark};
+    const Game fake{FakeAttach, FakeRemove, FakeLocal, FakeApplied, FakeWear, FakeTakeOff, FakeMark, FakeItemObject};
     Character me{65517}, other{65517};
     local = &me;
     TestSetup(fake);
@@ -288,7 +291,7 @@ void Preview() {
 
 void Dressing() {
     using namespace CostumePreview;
-    const Game fake{FakeAttach, FakeRemove, FakeLocal, FakeApplied, FakeWear, FakeTakeOff, FakeMark};
+    const Game fake{FakeAttach, FakeRemove, FakeLocal, FakeApplied, FakeWear, FakeTakeOff, FakeMark, FakeItemObject};
     Character me{65517}, other{0};
     local = &me;
     equippedAura = 65517;
@@ -324,6 +327,8 @@ void Dressing() {
     Update({}, 0);
     Expect("the old character is not touched", {});
     local = &me;
+    CHECK(ItemObject({215, 4456429, 1, 4}) == &bagObject);   // for the slot's tooltip
+    CHECK(!ItemObject({}) && !ItemObject({999, 4456429, 1, 4}));
     Hold({});
     Expect("nothing held, nothing marked", {});
     Hold({215, 4456429, 1, 4});
@@ -342,15 +347,27 @@ void Dressing() {
 }
 }  // namespace
 
+void Guard() {
+    using namespace CostumeGuard;
+    CHECK(Decide(false, 4456429, 1, false) == DoubleClick::Use);   // window closed: the game as it is
+    CHECK(Decide(true, 4456429, 1, false) == DoubleClick::Fill);
+    CHECK(Decide(true, 4440914, 4, false) == DoubleClick::Fill);
+    CHECK(Decide(true, 4456429, 1, true) == DoubleClick::Ignore);  // already in a slot: not equipped either
+    CHECK(Decide(true, 2985985, 1, false) == DoubleClick::Use);    // other items are used as usual
+    CHECK(Decide(true, 4456429, 0, false) == DoubleClick::Use);    // what is worn can still be taken off
+}
+
 int main(int argc, char** argv) {
     WindowChoices();
     Rechange();
     OtherCostume();
     Preview();
     Dressing();
+    Guard();
     if (argc < 2) { std::printf("FAIL no reference client given\n"); return 1; }
     const HMODULE image = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(image && CostumePreview::MatchesReference(reinterpret_cast<const unsigned char*>(image)));
+    CHECK(image && CostumeGuard::MatchesReference(reinterpret_cast<const unsigned char*>(image)));
     if (!failures) std::printf("Costume Effect client tests passed\n");
     return failures != 0;
 }
