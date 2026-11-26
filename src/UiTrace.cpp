@@ -325,6 +325,8 @@ constexpr int BossDotRows = 6;
 constexpr int BossDotAliveImage = 3963;
 constexpr int BossDotDeadImage = 3964;
 volatile LONG bossDot[BossDotRows]{};
+constexpr int CostumeIconId = 0x70D0;     // ICON_ID in tools/make_costume_effect_layout.py
+volatile LONG costumeIcon = 0;            // item type shown in the Costume Effect window, 0 = none
 // Button hover glow: 0x7050 + key (fill) and 0x7070 + key (border) resolve to the glow textures only for the hovered button.
 volatile LONG hoverKey = -1;
 constexpr int FirstItemBoxKey = 22;   // hover keys from here on are the item boxes of the Collection tab (glow textures); below: buttons
@@ -395,6 +397,13 @@ void __fastcall DetourImageResolve(void* self, void* edx, std::uint32_t* out, in
     if (id >= BossDotIds && id < BossDotIds + BossDotRows) {
         const LONG state = bossDot[id - BossDotIds];
         if (state == 1 || state == 2) originalResolve(self, out, state == 1 ? BossDotAliveImage : BossDotDeadImage);
+        else out[0] = out[1] = 0xFFFFFFFFu;
+        return;
+    }
+    if (id == CostumeIconId) {
+        std::uint32_t handle[2]{};
+        const unsigned type = static_cast<unsigned>(costumeIcon);
+        if (type && LookupItemHandle(type, handle)) { out[0] = handle[0]; out[1] = handle[1]; }
         else out[0] = out[1] = 0xFFFFFFFFu;
         return;
     }
@@ -1246,6 +1255,7 @@ void SetIconItem(int slot, unsigned itemType) {
     if (slot >= 36 && slot < IconIdCount) iconItem[slot] = itemType;
 }
 bool InspectLayoutInstalled() { return inspectLayout; }
+void SetCostumeIcon(unsigned itemType) { InterlockedExchange(&costumeIcon, static_cast<LONG>(itemType)); }
 // The game's own item tooltip for an item type (the Collection Book's mechanism), for other windows. Call it every frame while hovering, from
 // the window's draw (the tooltip window is shown at the cursor); HideTooltip() closes it.
 bool ShowTooltipFor(unsigned itemType) { int step = 0; return ShowItemTooltip(itemType, step); }
@@ -1282,7 +1292,8 @@ LONG Attach() {
     prototypeEnabled = legacy || BookEnabledByConfig();
     inspectLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\inspect_character.ui") != INVALID_FILE_ATTRIBUTES;
     const bool bossLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\boss_check.ui") != INVALID_FILE_ATTRIBUTES;   // its status dots
-    if (!diagnostics && !prototypeEnabled && !inspectLayout && !bossLayout) return NO_ERROR;
+    const bool costumeLayout = GetFileAttributesW(L"Bitmaps\\Interface4\\UI\\costume_effect.ui") != INVALID_FILE_ATTRIBUTES;
+    if (!diagnostics && !prototypeEnabled && !inspectLayout && !bossLayout && !costumeLayout) return NO_ERROR;
     if (prototypeEnabled) {
         if (legacy) ReadPrototypeName();
         else std::snprintf(prototypePath, sizeof prototypePath, "\\Bitmaps\\Interface4\\UI\\collection_book.ui");

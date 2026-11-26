@@ -6,6 +6,7 @@
 #include "CollectionBook/CollectionBookClient.h"
 #include "Inspect/InspectClient.h"
 #include "BossCheck/BossCheckClient.h"
+#include "CostumeEffect/CostumeClient.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
 #include <intrin.h>
@@ -30,6 +31,7 @@ std::deque<std::string> incoming,outgoing;
 std::atomic<bool> openRequested{false};
 std::atomic<bool> shopRequested{false};
 std::atomic<bool> bookRequested{false};
+std::atomic<bool> costumeRequested{false};   // `.costume`
 std::string pendingInspect;          // name typed after `.inspect`, guarded by queueMutex
 std::atomic<bool> inspectUsage{false}; // `.inspect` without a name
 std::atomic<bool> bossRequested{false}; // the Boss Check window was requested (the minimap skull button)
@@ -119,6 +121,10 @@ bool IsShopCommand(const char* text,short length) {
     while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
     return length==7 && _strnicmp(text,".epshop",7)==0;
 }
+bool IsCostumeCommand(const char* text,short length) {
+    while(length && (text[length-1]==' ' || text[length-1]=='\0')) --length;
+    return length==8 && _strnicmp(text,".costume",8)==0;
+}
 // Remembers the connection and the 21-byte Say header so queued commands can be sent as Say later.
 void Learn(void* self,unsigned id,const unsigned char* prefix) {
     std::lock_guard<std::mutex> guard(queueMutex);
@@ -136,7 +142,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
         if(ReadSay(body,text,length,prefix)) {
             std::string inspectName;
             const bool inspect=IsInspectCommand(text,length,inspectName);
-            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || inspect;
+            const bool command=IsOpenCommand(text,length) || IsShopCommand(text,length) || IsCostumeCommand(text,length) || inspect;
             void* current=nullptr;unsigned id=0;
             if(Current(current,id) && current==self && (command || learnFromChat.load())) {
                 // With the countdown active any ordinary Say teaches the header, so the background
@@ -150,6 +156,7 @@ int __fastcall Send(void* self,void*,int opcode,void* body,unsigned a,unsigned b
                         if(inspectName.empty()) inspectUsage=true;
                     }
                     else if(IsShopCommand(text,length)) shopRequested=true;
+                    else if(IsCostumeCommand(text,length)) costumeRequested=true;
                     else openRequested=true;
                     return 0; // Local command: do not broadcast .ahk into chat.
                 }
@@ -174,6 +181,7 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
         if(ReadString(text,local,sizeof local,length)) {
             if(sender==character.load() && Bridge::SessionMatches() &&
                (IsOpenCommand(local,static_cast<short>(length)) || IsShopCommand(local,static_cast<short>(length)) ||
+                IsCostumeCommand(local,static_cast<short>(length)) ||
                 [&]{std::string ignored;return IsInspectCommand(local,static_cast<short>(length),ignored);}())) return;
             void* current=nullptr;
             unsigned id=0;
@@ -190,6 +198,8 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
             (s==16 && std::memcmp(source,"[CollectionBook]",16)==0 && n>=5 && std::memcmp(message,"CBK1 ",5)==0) ||
             (s==9 && std::memcmp(source,"[Inspect]",9)==0 && n>=5 && std::memcmp(message,"INS1 ",5)==0) ||
             (s==11 && std::memcmp(source,"[BossCheck]",11)==0 && n>=5 && std::memcmp(message,"BOS1 ",5)==0) ||
+            (s==CostumeWire::Source.size() && std::memcmp(source,CostumeWire::Source.data(),s)==0 &&
+             n>=CostumeWire::ReplyPrefix.size() && std::memcmp(message,CostumeWire::ReplyPrefix.data(),CostumeWire::ReplyPrefix.size())==0) ||
             (s==DropBuffWire::Source.size() && std::memcmp(source,DropBuffWire::Source.data(),s)==0 &&
              n>=DropBuffWire::Prefix.size() && std::memcmp(message,DropBuffWire::Prefix.data(),DropBuffWire::Prefix.size())==0))) {
             std::lock_guard<std::mutex> guard(queueMutex);
@@ -267,7 +277,7 @@ void Pump() {
         if(!SessionMatches()) break;
         if(command.empty() || command.size()>160 ||
            (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 && command.compare(0,6,".cbk1 ")!=0 &&
-            command.compare(0,6,".ins1 ")!=0 && command.compare(0,6,".bos1 ")!=0 && command!=DropBuffWire::PollCommand)) continue;
+            command.compare(0,6,".ins1 ")!=0 && command.compare(0,6,".bos1 ")!=0 && command.compare(0,6,".cos1 ")!=0 && command!=DropBuffWire::PollCommand)) continue;
         std::array<unsigned char,181> body{};
         std::memcpy(body.data(),prefix.data(),21);
         const short length=static_cast<short>(command.size());
@@ -283,7 +293,7 @@ void Pump() {
 void Disconnect(AhkWindow& window,EventShopWindow* shop,DropBuffHud* hud) {
     if(shop) shop->ResetSession();
     if(hud) hud->Reset();
-    CollectionBookClient::Shared().Reset();bookRequested=false;InspectClient::Shared().Reset();BossCheckClient::Shared().Reset();
+    CollectionBookClient::Shared().Reset();bookRequested=false;InspectClient::Shared().Reset();BossCheckClient::Shared().Reset();CostumeClient::Shared().Reset();costumeRequested=false;
     shopRequested=false;
     window.ResetSession();prefixReady=false;openRequested=false;sessionResetRequested=false;
     connection=nullptr;character=0;gameThread=0;
@@ -304,11 +314,16 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
         else if(reply.compare(0,5,"CBK1 ")==0) CollectionBookClient::Shared().Receive(reply);
         else if(reply.compare(0,5,"INS1 ")==0) InspectClient::Shared().Receive(reply);
         else if(reply.compare(0,5,"BOS1 ")==0) BossCheckClient::Shared().Receive(reply);
+        else if(reply.compare(0,5,"COS1 ")==0) CostumeClient::Shared().Receive(reply,GetTickCount64());
         else if(reply.compare(0,DropBuffWire::Prefix.size(),DropBuffWire::Prefix)==0) {if(hud) hud->Receive(reply);}
         else window.Receive(reply);
     }
     auto commands=window.TakeCommands();
     if(SessionMatches()) {
+        auto& costume=CostumeClient::Shared();
+        if(costumeRequested.exchange(false)) {if(shop) shop->Close();window.Close();costume.Open(GetTickCount64());}
+        costume.Tick(GetTickCount64());
+        for(auto& command:costume.TakeCommands()) commands.push_back(std::move(command));
         // Inspect: start the request typed as `.inspect <name>`, report a refused one, move on the timeout.
         std::string pending;
         bool wantSlots=false;

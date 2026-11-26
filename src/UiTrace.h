@@ -14,6 +14,8 @@ void Frame();
 // which InspectLayoutInstalled() reports (the layout file inspect_character.ui exists in the client folder).
 void SetIconItem(int slot, unsigned itemType);
 bool InspectLayoutInstalled();
+// The item picture of the Costume Effect window (0 clears it).
+void SetCostumeIcon(unsigned itemType);
 // The inspect window page whose images are drawn: 1 Battle, 2 Costume.
 void SetInspectPage(int page);
 void SetInspectHover(int box);   // item box of the inspect window under the cursor, -1 for none (glow)

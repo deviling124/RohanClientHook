@@ -32,6 +32,9 @@
 #include "Inspect/PlayerMenu.h"
 #include "CollectionBook/NpcMenu.h"
 #include "ItemTooltip/CombatStatLines.h"
+#include "CostumeEffect/CostumeClient.h"
+#include "CostumeEffect/CostumeWindow.h"
+#include "CostumeEffect/CostumePreview.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 namespace {
@@ -81,6 +84,7 @@ HANDLE logFile=INVALID_HANDLE_VALUE;
 SRWLOCK logLock=SRWLOCK_INIT;
 
 bool BlockInput() {return visible.load() || releaseHold.load();}
+bool CostumeOpen() {return CostumeClient::Shared().Visible();}
 void AcquireOverlayCursor() {
     if(cursorOwned) return;
     if(!overlayCursor) overlayCursor=LoadCursorW(nullptr,IDC_ARROW);
@@ -145,6 +149,7 @@ bool InputMessage(UINT message) {
 LRESULT CALLBACK WndProc(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_APP+0x391) {Bridge::Pump();return 0;}
     if(message==WM_APP+0x392) {KioskSearch::Frame();return 0;}
+    if(message==WM_APP+0x393) {CostumeWindow::UpdatePreview();return 0;}
     if(guiReady && GetCurrentThreadId()==renderThread) {
         if(visible && message==WM_KEYDOWN && w==VK_ESCAPE) {
             window.Close();eventShop.Close();SetVisible(false);return 0;
@@ -253,6 +258,7 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
                                    HWND overrideWindow,const RGNDATA* dirtyRegion) {
     InspectWindow::Frame(); // the inspect window (`.inspect <name>`)
     BossCheckWindow::Frame(); // the Boss Check window
+    CostumeWindow::Frame(); // the Costume Effect window (`.costume`)
     MinimapButton::Frame(); // the Boss Check button on the minimap
     StatusTrace::Frame(); // F10 capture for the Character Information trace (statustrace.on only)
     UiTrace::Frame(); // the Collection Book window (opened from the NPC dialog line); tracing only with uitrace.on
@@ -265,6 +271,8 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
         struct IconFrame { ~IconFrame() { EventShopIcons::ReleaseFrame(); } } iconFrame;
         Bridge::Frame(window,primaryWindow,&eventShop,nullptr);
         // Native chat timeout notices run on the owning window thread.
+        static ULONGLONG lastCostumePump=0;
+        if(GetTickCount64()-lastCostumePump>=50) {lastCostumePump=GetTickCount64();PostMessageW(primaryWindow,WM_APP+0x393,0,0);}
         static ULONGLONG lastKioskPump=0;
         const auto kioskNow=GetTickCount64();
         if(kioskNow-lastKioskPump>=500) {
@@ -387,6 +395,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     if(result==NO_ERROR) result=PlayerMenu::Attach();
     if(result==NO_ERROR) result=NpcMenu::Attach();
     if(result==NO_ERROR) result=CombatStatLines::Attach();
+    if(result==NO_ERROR) result=CostumePreview::Attach();
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalCreate9),reinterpret_cast<PVOID>(Create9));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalInputCreate),reinterpret_cast<PVOID>(CreateInput));
     if(result==NO_ERROR) result=DetourAttach(reinterpret_cast<PVOID*>(&originalAsync),reinterpret_cast<PVOID>(AsyncKey));
