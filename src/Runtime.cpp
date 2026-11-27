@@ -19,6 +19,7 @@
 #include "Splash.h"
 #include "CustomEvents/EventNotice.h"
 #include "CustomEvents/MonsterName.h"
+#include "EventManager/EventPopupWindow.h"
 #include "EventGate/GateWall.h"
 #include "Chats/GlobalChat.h"
 #include "Auth/AutotradeLogin.h"
@@ -262,6 +263,7 @@ HRESULT STDMETHODCALLTYPE Present(IDirect3DDevice9* self,const RECT* source,cons
     InspectWindow::Frame(); // the inspect window (`.inspect <name>`)
     BossCheckWindow::Frame(); // the Boss Check window
     CostumeWindow::Frame(); // the Costume Effect window (`.costume`)
+    EventPopupWindow::Frame(); // the Event Manager join popup
     MinimapButton::Frame(); // the Boss Check button on the minimap
     StatusTrace::Frame(); // F10 capture for the Character Information trace (statustrace.on only)
     UiTrace::Frame(); // the Collection Book window (opened from the NPC dialog line); tracing only with uitrace.on

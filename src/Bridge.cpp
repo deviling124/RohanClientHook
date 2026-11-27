@@ -7,6 +7,7 @@
 #include "Inspect/InspectClient.h"
 #include "BossCheck/BossCheckClient.h"
 #include "CostumeEffect/CostumeClient.h"
+#include "EventManager/EventInviteStore.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
 #include "../shared/HunterKitStopProtocol.h"
@@ -289,7 +290,8 @@ void Pump() {
         if(!SessionMatches()) break;
         if(command.empty() || command.size()>160 ||
            (command.compare(0,8,".ahkui1 ")!=0 && command.compare(0,6,".eps1 ")!=0 && command.compare(0,6,".cbk1 ")!=0 &&
-            command.compare(0,6,".ins1 ")!=0 && command.compare(0,6,".bos1 ")!=0 && command.compare(0,6,".cos1 ")!=0 && command!=DropBuffWire::PollCommand)) continue;
+            command.compare(0,6,".ins1 ")!=0 && command.compare(0,6,".bos1 ")!=0 && command.compare(0,6,".cos1 ")!=0 &&
+            command.compare(0,EventManagerWire::JoinPrefix.size(),EventManagerWire::JoinPrefix)!=0 && command!=DropBuffWire::PollCommand)) continue;
         std::array<unsigned char,181> body{};
         std::memcpy(body.data(),prefix.data(),21);
         const short length=static_cast<short>(command.size());
@@ -349,6 +351,7 @@ void Frame(AhkWindow& window,HWND hwnd,EventShopWindow* shop,DropBuffHud* hud) {
         auto& boss=BossCheckClient::Shared();
         boss.Tick(GetTickCount64());
         for(auto& command:boss.TakeCommands()) commands.push_back(std::move(command));
+        for(auto& command:EventManager::Invites().TakeCommands()) commands.push_back(std::move(command));
         auto& book=CollectionBookClient::Shared();
         book.Tick(GetTickCount64());
         for(auto& command:book.TakeCommands()) commands.push_back(std::move(command));

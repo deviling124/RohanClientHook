@@ -2,6 +2,7 @@
 #include "../../shared/EventNoticeProtocol.h"
 #include "MonsterName.h"
 #include "../EventGate/GateWallStore.h"
+#include "../EventManager/EventInviteStore.h"
 #include "detours.h"
 #include <cstring>
 
@@ -47,6 +48,10 @@ void GateWall(const unsigned char* body, std::size_t bytes) {
     EventGateWire::Message message;
     if (EventGateWire::Decode(body, bytes, message)) EventGate::Walls.Apply(message, GetTickCount64());
 }
+void Invite(const unsigned char* body, std::size_t bytes) {
+    EventManagerWire::Message message;
+    if (EventManagerWire::Decode(body, bytes, message)) EventManager::Invites().Apply(message, GetTickCount64());
+}
 EventNoticeWire::Result ReadNotice(void* reader, char (&text)[EventNoticeWire::MaxText + 1]) {
     using namespace EventNoticeWire;
     __try {
@@ -67,6 +72,12 @@ EventNoticeWire::Result ReadNotice(void* reader, char (&text)[EventNoticeWire::M
         if (EventGateWire::IsGatePacket(data + cursor, size - cursor)) {
             // Event gate wall state: consumed here, never shown as a notice.
             GateWall(data + cursor, size - cursor);
+            *reinterpret_cast<unsigned*>(object + 0x10) = size;
+            return Result::Invalid;
+        }
+        if (EventManagerWire::IsInvitePacket(data + cursor, size - cursor)) {
+            // Event Manager join popup: consumed here, never shown as a notice.
+            Invite(data + cursor, size - cursor);
             *reinterpret_cast<unsigned*>(object + 0x10) = size;
             return Result::Invalid;
         }
