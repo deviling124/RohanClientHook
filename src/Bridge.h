@@ -6,6 +6,8 @@ class DropBuffHud;
 namespace Bridge {
 // Called inside the caller's Detours transaction, before client game code runs.
 LONG Attach();
+// Called on the game thread each time the server says another player hit this one (it only stops the Hunter Kit).
+void SetAttackedByPlayerHandler(void (*handler)());
 void Frame(AhkWindow& window,HWND gameWindow,EventShopWindow* shop=nullptr,DropBuffHud* hud=nullptr);
 void Pump();
 bool SessionMatches();
