@@ -39,6 +39,7 @@
 <ClCompile Include="shared\NovaChannelCng.cpp" />
 <ClCompile Include="src\CustomEvents\EventNotice.cpp" /><ClCompile Include="src\CustomEvents\MonsterName.cpp" />
 <ClCompile Include="src\EventGate\GateWall.cpp" />
+<ClCompile Include="src\EventManager\EventPopupWindow.cpp" />
 <ClCompile Include="src\Dx9Frame.cpp" />
 <ClCompile Include="src\Splash.cpp" />
 <ClCompile Include="src\UiTrace.cpp" />
