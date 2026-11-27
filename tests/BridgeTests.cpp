@@ -332,6 +332,24 @@ void DropBuffTransport() {
     Bridge::Frame(window,nullptr,nullptr,&hud);
     Check(!hud.Active(),"a connection change clears the countdown");
 }
+unsigned attacked=0;
+void CountAttacked() {++attacked;}
+void HunterKitStopSignal() {
+    Setup(); attacked=0;
+    Bridge::SetAttackedByPlayerHandler(CountAttacked);
+    const auto source=reinterpret_cast<void*>(0x402f14);
+    Check(!Bridge::SessionMatches(),"no Say header yet");
+    Receive("HKS1 stop",source,3,0,"[HunterKit]");
+    Check(attacked==1 && displays==0 && Bridge::Test::Incoming()==0,"stop signal handled at once, hidden, no prior chat needed");
+    Receive("HKS1 stop",source,3,100,"[HunterKit]");
+    Receive("HKS1 stop",reinterpret_cast<void*>(0x402f15),3,0,"[HunterKit]");
+    Receive("HKS1 stop",source,0,0,"[HunterKit]");
+    Receive("HKS1 stop",source,3,0,"[EventShop]");
+    Receive("HKS1 stop now",source,3,0,"[HunterKit]");
+    Receive("hello",source,3,0,"[HunterKit]");
+    Check(attacked==1 && displays==6,"spoofed sender, caller, mode, name and other text pass through as chat");
+    Bridge::SetAttackedByPlayerHandler(nullptr);
+}
 void EventShopTransport() {
     Setup(); AhkWindow window; EventShopWindow shop;
     auto command = Say(".EPShop  ");
@@ -405,6 +423,7 @@ int main() {
     GlobalChatLocalEcho();
     EventShopTransport();
     DropBuffProtocolAndCountdown();DropBuffTransport();
+    HunterKitStopSignal();
     std::printf("AHK native chat bridge: %u checks passed. No game code executed.\n",checks);
     return 0;
 }

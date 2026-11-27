@@ -36,6 +36,7 @@
 #include "CostumeEffect/CostumeWindow.h"
 #include "CostumeEffect/CostumePreview.h"
 #include "CostumeEffect/CostumeGuard.h"
+#include "HunterKit/HunterKitStop.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
 namespace {
@@ -380,6 +381,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     originalCreate9=reinterpret_cast<Create9Fn>(GetProcAddress(d3d,"Direct3DCreate9"));
     originalInputCreate=reinterpret_cast<InputCreateFn>(GetProcAddress(input,"DirectInput8Create"));
     if(!originalCreate9 || !originalInputCreate) {Splash::Stop();startup=3;return ERROR_PROC_NOT_FOUND;}
+    Bridge::SetAttackedByPlayerHandler(HunterKitStop::OnAttackedByPlayer);
     LONG result=DetourTransactionBegin();
     if(result!=NO_ERROR) {Splash::Stop();startup=3;return result;}
     result=DetourUpdateThread(GetCurrentThread());

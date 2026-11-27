@@ -9,6 +9,7 @@
 #include "CostumeEffect/CostumeClient.h"
 #include "detours.h"
 #include "../shared/GlobalChatWire.h"
+#include "../shared/HunterKitStopProtocol.h"
 #include <intrin.h>
 #include <atomic>
 #include <array>
@@ -28,6 +29,7 @@ auto sendOriginal=reinterpret_cast<SendFn>(0x407f50);
 auto ingressOriginal=reinterpret_cast<IngressFn>(0x5ea790);
 std::mutex queueMutex;
 std::deque<std::string> incoming,outgoing;
+std::atomic<void(*)()> attackedByPlayer{nullptr};
 std::atomic<bool> openRequested{false};
 std::atomic<bool> shopRequested{false};
 std::atomic<bool> bookRequested{false};
@@ -190,6 +192,15 @@ void __fastcall Ingress(void* self,void*,unsigned mode,void* text,void* name,uns
                Current(current,id) && sender==id) return;
         }
     }
+    // Handled here, not queued: it must work before the player has chatted, and also while no frame is drawn.
+    if(caller==reinterpret_cast<void*>(0x402f14) && mode==3 && sender==0) {
+        char message[32]{},source[32]{};std::size_t n=0,s=0;
+        if(ReadString(name,source,sizeof source,s) && std::string_view(source,s)==HunterKitStopWire::Source &&
+           ReadString(text,message,sizeof message,n) && std::string_view(message,n)==HunterKitStopWire::Stop) {
+            if(const auto handler=attackedByPlayer.load()) handler();
+            return;
+        }
+    }
     if(caller==reinterpret_cast<void*>(0x402f14) && mode==3 && sender==0 && Bridge::SessionMatches()) {
         char message[256]{},source[32]{};std::size_t n=0,s=0;
         if(ReadString(text,message,sizeof message,n) && ReadString(name,source,sizeof source,s) &&
@@ -217,6 +228,7 @@ LONG Attach() {
     if(error==NO_ERROR) error=DetourAttach(&reinterpret_cast<PVOID&>(ingressOriginal),reinterpret_cast<PVOID>(Ingress));
     return error;
 }
+void SetAttackedByPlayerHandler(void (*handler)()) {attackedByPlayer=handler;}
 bool SessionMatches() {
     void* current=nullptr;unsigned id=0;
     return prefixReady.load() && Current(current,id) && current==connection.load() && id==character.load();
