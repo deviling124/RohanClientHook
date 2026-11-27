@@ -19,6 +19,7 @@
 #include "Splash.h"
 #include "CustomEvents/EventNotice.h"
 #include "CustomEvents/MonsterName.h"
+#include "EventGate/GateWall.h"
 #include "Chats/GlobalChat.h"
 #include "Auth/AutotradeLogin.h"
 #include "KioskSearch.h"
@@ -388,6 +389,7 @@ extern "C" DWORD WINAPI NovaClient_Initialize(void* reserved) {
     if(result==NO_ERROR) result=Bridge::Attach();
     if(result==NO_ERROR) result=EventNotice::Attach();
     if(result==NO_ERROR) result=MonsterName::Attach();
+    if(result==NO_ERROR) result=EventGate::Attach();
     if(result==NO_ERROR) result=GlobalChat::Attach();
     if(result==NO_ERROR) result=AutotradeLogin::Attach();
     if(result==NO_ERROR) result=KioskSearch::Attach();

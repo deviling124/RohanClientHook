@@ -1,6 +1,7 @@
 #include "EventNotice.h"
 #include "../../shared/EventNoticeProtocol.h"
 #include "MonsterName.h"
+#include "../EventGate/GateWallStore.h"
 #include "detours.h"
 #include <cstring>
 
@@ -42,6 +43,10 @@ void* ChatManager() {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
 #endif
 }
+void GateWall(const unsigned char* body, std::size_t bytes) {
+    EventGateWire::Message message;
+    if (EventGateWire::Decode(body, bytes, message)) EventGate::Walls.Apply(message, GetTickCount64());
+}
 EventNoticeWire::Result ReadNotice(void* reader, char (&text)[EventNoticeWire::MaxText + 1]) {
     using namespace EventNoticeWire;
     __try {
@@ -56,6 +61,12 @@ EventNoticeWire::Result ReadNotice(void* reader, char (&text)[EventNoticeWire::M
         if (DecodeNameOverride(data + cursor, size - cursor, monsterId, monsterName)) {
             // Disguise Event name override: consumed here, never shown as a notice.
             MonsterName::Handle(monsterId, monsterName);
+            *reinterpret_cast<unsigned*>(object + 0x10) = size;
+            return Result::Invalid;
+        }
+        if (EventGateWire::IsGatePacket(data + cursor, size - cursor)) {
+            // Event gate wall state: consumed here, never shown as a notice.
+            GateWall(data + cursor, size - cursor);
             *reinterpret_cast<unsigned*>(object + 0x10) = size;
             return Result::Invalid;
         }
