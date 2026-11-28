@@ -20,7 +20,7 @@ inline constexpr unsigned ExpiryMs = 7000;     // a client drops a popup the ser
 inline constexpr unsigned MaxSeconds = 3600;
 inline constexpr std::string_view Command = ".evm1", JoinPrefix = ".evm1 join ";
 
-enum class State { Asking = 0, Joined = 1, WrongPlace = 2, Failed = 3 };
+enum class State { Asking = 0, Joined = 1, WrongPlace = 2, Failed = 3, Dead = 4 };
 
 struct Message {
     std::uint32_t id = 0;
@@ -93,7 +93,7 @@ inline bool Decode(const unsigned char* body, std::size_t bytes, Message& messag
     if (rest == "off") return true;
     std::uint32_t state = 0;
     if (!next(part) || !ParseNumber(part, MaxSeconds, message.seconds)) return false;
-    if (!next(part) || !ParseNumber(part, static_cast<std::uint64_t>(State::Failed), state)) return false;
+    if (!next(part) || !ParseNumber(part, static_cast<std::uint64_t>(State::Dead), state)) return false;
     if (!ValidName(rest)) return false;
     message.state = static_cast<State>(state);
     message.name = std::string(rest);

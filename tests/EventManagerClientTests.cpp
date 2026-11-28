@@ -52,6 +52,12 @@ int main() {
     Check(!store.Current(40000).id, "the number of invites is bounded");
     store.Apply({30, true, 60, State::WrongPlace, "Disguise Event"}, 50000);
     Check(store.Join(30, 50000), "a refused player can click again");
+    store.Apply({31, true, 60, State::Dead, "Disguise Event"}, 50000);
+    unsigned char body[HeaderSize + MaxText]{};
+    std::size_t written = 0;
+    Message decoded;
+    Check(Encode({31, true, 60, State::Dead, "Disguise Event"}, body, sizeof body, written) &&
+          Decode(body, written, decoded) && decoded.state == State::Dead, "the client reads the dead refusal");
     store.Reset();
     Check(!store.Current(50000).id && store.TakeCommands().empty(), "reset forgets everything");
     std::printf("%d checks, %d failures\n", checks, failures);

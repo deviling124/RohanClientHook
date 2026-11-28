@@ -91,7 +91,8 @@ void Fill(const EventManager::InviteStore::View& view) {
     char time[48];
     std::snprintf(time, sizeof time, "Starts in %u:%02u", view.seconds / 60, view.seconds % 60);
     const char* line = "Do you want to join?";
-    if (view.state == EventManagerWire::State::WrongPlace) line = "Go to the main world first.";
+    if (view.state == EventManagerWire::State::Dead) line = "Revive first, then Join.";
+    else if (view.state == EventManagerWire::State::WrongPlace) line = "Go to the main world first.";
     else if (view.state == EventManagerWire::State::Failed) line = "Move failed. Try again.";
     SetText(NameText, view.name);
     SetText(TimeText, time);
